@@ -18,6 +18,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process,
+    os::unix::fs::OpenOptionsExt,
 };
 
 #[derive(Deserialize)]
@@ -415,7 +416,12 @@ fn main() {
                         if response.status().is_success() {
                             // Save to temporary file
                             let temp_path = format!("/tmp/{}", exact_package);
-                            if let Ok(mut file) = File::create(&temp_path) {
+                            if let Ok(mut file) = std::fs::OpenOptions::new()
+                                .write(true)
+                                .create(true)
+                                .mode(0o666) // Set appropriate permissions
+                                .open(&temp_path)
+                            {
                                 if let Ok(content) = response.bytes() {
                                     if let Err(e) = file.write_all(&content) {
                                         eprintln!("Failed to write package file: {}", e);
@@ -430,6 +436,9 @@ fn main() {
                                     let _ = fs::remove_file(&temp_path);
                                     println!("Package {} installed successfully", exact_package);
                                 }
+                            } else {
+                                eprintln!("Failed to create temporary file in /tmp");
+                                process::exit(1);
                             }
                         } else {
                             eprintln!("Failed to download package: HTTP {}", response.status());
