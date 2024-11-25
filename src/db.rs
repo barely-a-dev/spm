@@ -142,6 +142,7 @@ impl Database {
     pub fn exact_search(&self, query: String) -> Option<String> {
         self.entries.get(&query).map(|_| query)
     }
+    // TODO: Fix? I can't tell if it's broken or not.
     pub fn check_updates(&self) -> Vec<(String, String, String)> {
         // Returns (name, current_version, available_version)
         let mut updates = Vec::new();
