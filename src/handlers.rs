@@ -17,6 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
+use crate::lock::Lock;
 
 pub fn handle_package_file(
     input_file: &str,
@@ -1001,6 +1002,7 @@ pub fn handle_remove_package(
 }
 
 pub fn handle_dev_pub(dir: PathBuf, config: &mut Config, database: &db::Database) -> Result<(), Box<dyn Error>> {
+    let _lock = Lock::new("build")?;
     // Check if directory exists
     if !dir.exists() || !dir.is_dir() {
         return Err("Invalid project directory".into());
@@ -1193,6 +1195,8 @@ pub fn handle_dev_pub(dir: PathBuf, config: &mut Config, database: &db::Database
 }
 
 pub fn handle_uninstall_package(package_name: &str, cache: &mut Cache) -> Result<(), Box<dyn Error>> {
+    let _lock = Lock::new("cache")?;
+    let _bin_lock = Lock::new("bin");
     if let Some(installed_files) = cache.remove(package_name) {
         println!("Uninstalling package {}...", package_name);
         

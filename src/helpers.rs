@@ -1,11 +1,13 @@
 use crate::db::Cache;
 use crate::db::Database;
 use crate::handlers::*;
+use crate::lock::Lock;
 use crate::patch::Patch;
 use crate::Config;
 use std::env;
 use std::io::Read;
 use std::io::Write;
+use std::time::Duration;
 use std::{
     error::Error,
     fs,
@@ -27,6 +29,7 @@ pub fn write_varint<W: Write>(writer: &mut W, mut value: u32) -> Result<(), Box<
             break;
         }
     }
+
     Ok(())
 }
 
@@ -195,6 +198,9 @@ pub fn get_matches(
         }
     } else if let Some(mut args) = matches.get_many::<String>("install-package") {
         require_root("installing packages");
+        let _lock = Lock::new("db");
+        let _cache_lock = Lock::new("cache");
+        let _bin_lock = Lock::new("bin");
         let package_path = args.next().expect("Package file argument required");
         let target_dir = args.next().map(|s| s.as_str()); // Convert to Option<&str>
 
@@ -203,6 +209,7 @@ pub fn get_matches(
             process::exit(1);
         }
     } else if let Some(mut args) = matches.get_many::<String>("config") {
+        require_root("updating config");
         let key = args.next().expect("Key argument required");
         let value = args.next().expect("Value argument required");
 
@@ -256,6 +263,9 @@ pub fn get_matches(
         }
     } else if let Some(package) = matches.get_one::<String>("install") {
         require_root("installing packages");
+        let _lock = Lock::new("db");
+        let _cache_lock = Lock::new("cache");
+        let _bin_lock = Lock::new("bin");
         if package.starts_with("./") || package.ends_with(".spm") {
             // Local package installation
             if let Err(e) = handle_install_package(package, None, cache) {
@@ -293,7 +303,6 @@ pub fn get_matches(
                     // MAYBEDO: Custom sources outside of GH
                     format!("{}/{}", database.src(), exact_package)
                 };
-
                 match client.get(&url).header("User-Agent", "spm-client").send() {
                     Ok(response) => {
                         if response.status().is_success() {
@@ -340,7 +349,10 @@ pub fn get_matches(
             }
         }
     } else if matches.get_flag("update") {
-        require_root("installing patches");
+        require_root("installing updates");
+        let _lock = Lock::new("db");
+        let _cache_lock = Lock::new("cache");
+        let _bin_lock = Lock::new("bin");
         println!("Checking for updates...");
         let updates = database.check_updates();
 
@@ -431,6 +443,12 @@ pub fn get_matches(
             eprintln!("Failed to uninstall package: {}", e);
             process::exit(1);
         }
+    } else if matches.contains_id("do-nothing") {
+        let def = &"5000".to_string();
+        let len = matches.get_one::<String>("do-nothing").unwrap_or(def);
+        std::thread::sleep(Duration::from_millis(len.parse::<u64>().unwrap_or(5000)));
+    } else if matches.contains_id("lock-test") {
+        let _lock = Lock::new("db").expect("Failed to lock");
     } else if matches.contains_id("list") {
         match matches.get_one::<String>("list") {
             Some(package) => {

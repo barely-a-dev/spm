@@ -18,7 +18,7 @@ use std::fs::File;
 use std::io::{Read, Write, Seek};
 use std::path::Path;
 use zstd::{encode_all, decode_all};
-use crate::helpers::{write_varint, read_varint};
+use crate::helpers::{read_varint, write_varint};
 
 const MAGIC: &[u8] = b"RPAT";
 const VERSION: u8 = 1;

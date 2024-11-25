@@ -1,9 +1,11 @@
 mod db;
 mod handlers;
 mod helpers;
+mod lock;
 mod package;
 mod patch;
 
+use crate::lock::Lock;
 use clap::{Arg, ArgAction, Command as ClapCommand};
 use db::Cache;
 use package::Package;
@@ -11,12 +13,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::{
-    error::Error,
-    fs,
-    path::PathBuf,
-    process,
-};
+use std::{error::Error, fs, path::PathBuf, process};
 
 #[derive(Deserialize)]
 struct PackageConfig {
@@ -63,11 +60,14 @@ impl Config {
     }
 
     fn save(&self) -> Result<(), Box<dyn Error>> {
+        let _lock = Lock::new("conf")?;
+
         let mut contents = String::new();
         for (key, value) in &self.settings {
             contents.push_str(&format!("{}={}\n", key, value));
         }
         fs::write(&self.path, contents)?;
+
         Ok(())
     }
 
@@ -100,7 +100,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("2.4.17")
+        .version("2.5.17")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -252,7 +252,20 @@ fn main() {
                 .help("List installed packages and their files. Optionally specify a package name")
                 .num_args(0..=1)
                 .value_name("PACKAGE"),
-        )        
+        )
+        .arg(
+            Arg::new("do-nothing")
+                .long("wait")
+                .help("DEBUG FUNCTION")
+                .num_args(0..=1)
+                .value_name("WAIT_LEN")
+        )
+        .arg(
+            Arg::new("lock-test")
+                .long("lock")
+                .help("DEBUG FUNCTION")
+                .action(ArgAction::SetTrue)
+        )
         .get_matches();
 
     helpers::get_matches(matches, &mut config, &mut database, &mut cache);

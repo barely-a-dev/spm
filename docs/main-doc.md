@@ -150,7 +150,8 @@ pub fn apply(&self, dir_of_file: &str) -> Result<(), Box<dyn Error>>;
 | -f, --package-file | Package file | None | `spm -f input out.spm` |
 | -b, --publish | Publish package | None* | `spm -b pkg.spm` |
 | -p, --install-patch | Install patch | Root | `sudo spm -p /target patch.rpat` |
-| -q, --dev-pub | Auto-build & publish | None* | `spm -q |
+| -q, --dev-pub | Auto-build & publish | None* | `spm -q` |
+| -C, --config | Configure the program | Root | `spm -C net_enabled true` |
 
 *Requires GitHub token configuration
 **Requires GitHub token configuration if not using on a local file

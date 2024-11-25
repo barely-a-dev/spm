@@ -6,7 +6,7 @@ use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-// TODO: locking DB
+use crate::lock::Lock;
 
 pub struct Database {
     src: String,
@@ -77,6 +77,7 @@ impl Database {
     }
 
     pub fn update_db(&mut self) -> Result<(), Box<dyn Error>> {
+        let _lock = Lock::new("db")?;
         let client = reqwest::blocking::Client::new();
         let parts: Vec<&str> = self.src.split('/').collect();
         let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
@@ -201,7 +202,6 @@ impl Cache {
         };
 
         let path = PathBuf::from("/var/cache/spm/spm.cache");
-
         if path.exists() {
             if let Ok(contents) = fs::read_to_string(&path) {
                 for line in contents.lines() {
@@ -218,11 +218,11 @@ impl Cache {
                 }
             }
         }
-
         cache
     }
 
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
+        let _lock = Lock::new("cache")?;
         let path = PathBuf::from("/var/cache/spm/spm.cache");
 
         let mut file = File::create(&path)?;
@@ -236,7 +236,6 @@ impl Cache {
 
             writeln!(file, "{}=[{}]", package, files_str)?;
         }
-
         Ok(())
     }
 
