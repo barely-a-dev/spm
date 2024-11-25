@@ -766,7 +766,7 @@ pub fn handle_remove_package(
     let permission_level = permission_info["permission"].as_str().unwrap_or("none");
 
     // Construct file path
-    let file_path = format!("{}.spm", package_name);
+    let file_path = format!("{}", package_name);
 
     match permission_level {
         "admin" | "write" => {
