@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,8 +11,14 @@
             --secondary: #22272e;
             --text: #adbac7;
             --accent: #539bf5;
+            --success: #347d39;
+            --warning: #c69026;
         }
-        
+
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             line-height: 1.6;
@@ -20,117 +27,375 @@
             background: var(--primary);
             color: var(--text);
         }
-        
+
         .container {
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
         }
-        
+
         header {
             background: var(--secondary);
             padding: 2rem 0;
             margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
-        
-        h1, h2 {
+
+        header .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        nav a {
+            color: var(--text);
+            text-decoration: none;
+            margin-left: 2rem;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: var(--accent);
+        }
+
+        h1,
+        h2,
+        h3 {
             color: #fff;
         }
-        
+
         .version {
             color: var(--accent);
             font-size: 0.9rem;
+            padding: 0.3rem 0.8rem;
+            background: rgba(83, 155, 245, 0.1);
+            border-radius: 20px;
         }
-        
+
         .features {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1.5rem;
             margin: 2rem 0;
         }
-        
+
         .feature-card {
             background: var(--secondary);
             padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
         }
-        
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
         code {
             background: #1b1f24;
             padding: 0.2rem 0.4rem;
             border-radius: 4px;
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
         }
-        
+
         .installation {
             background: var(--secondary);
-            padding: 1.5rem;
-            border-radius: 8px;
+            padding: 2rem;
+            border-radius: 12px;
             margin: 2rem 0;
         }
-        
+
         .cmd {
             background: #1b1f24;
             padding: 1rem;
-            border-radius: 4px;
+            border-radius: 8px;
             margin: 1rem 0;
+            position: relative;
+        }
+
+        .cmd::before {
+            content: '$';
+            color: var(--accent);
+            margin-right: 1rem;
+        }
+
+        .copy-btn {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--accent);
+            border: none;
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 4px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .cmd:hover .copy-btn {
+            opacity: 1;
+        }
+
+        .tabs {
+            display: flex;
+            margin: 2rem 0;
+            border-bottom: 2px solid var(--secondary);
+        }
+
+        .tab {
+            padding: 1rem 2rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab.active {
+            border-bottom-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        footer {
+            background: var(--secondary);
+            padding: 2rem 0;
+            margin-top: 4rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            header .container {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            nav {
+                margin-top: 1rem;
+            }
+
+            nav a {
+                margin: 0 1rem;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            .feature-card {
+                padding: 1rem;
+            }
+
+            .quick-install {
+                position: relative;
+                padding: 1rem 0;
+            }
+
+            .quick-install .cmd {
+                padding: 1rem;
+                padding-right: 5rem;
+                /* Make space for the button */
+                word-break: break-all;
+                /* Allow text to wrap */
+            }
+
+            .quick-install .copy-btn {
+                opacity: 1;
+                /* Always show button on mobile */
+                right: 0.5rem;
+            }
         }
     </style>
 </head>
+
 <body>
     <header>
         <div class="container">
-            <h1>SPM - Simple Package Manager</h1>
-            <span class="version">Version 1.4.17</span>
+            <div>
+                <h1>SPM - Simple Package Manager</h1>
+                <span class="version">Version 2.4.17</span>
+            </div>
+            <nav>
+                <a href="#features">Features</a>
+                <a href="#installation">Installation</a>
+                <a href="#documentation">Documentation</a>
+                <a href="https://github.com/barely-a-dev/spm_repo">GitHub</a>
+            </nav>
         </div>
     </header>
-    
+
     <main class="container">
-        <p>
-            SPM is a lightweight, efficient package manager designed for simplicity and ease of use.
-            It supports both local package installation and remote package management through GitHub repositories.
+        <p class="intro">
+            SPM is a powerful yet lightweight package manager that simplifies distribution and installation.
+            With support for both local and remote packages, version control, and secure package management,
+            SPM makes it easy to manage your software ecosystem.
         </p>
-        
-        <div class="features">
+
+        <div class="quick-install">
+            <code
+                class="cmd">curl -sSL https://raw.githubusercontent.com/barely-a-dev/spm_repo/master/install.sh | sudo bash</code>
+            <button class="copy-btn">Copy</button>
+        </div>
+
+        <div id="features" class="features">
             <div class="feature-card">
                 <h3>📦 Package Management</h3>
-                <p>Create, install, and manage packages with simple commands. Supports both local and remote packages.</p>
+                <p>Create, install, and manage packages with simple commands. Supports both local and remote packages
+                    through GitHub repositories.</p>
+                <ul>
+                    <li>Local package creation</li>
+                    <li>Remote package installation</li>
+                    <li>Version tracking</li>
+                </ul>
             </div>
-            
+
             <div class="feature-card">
                 <h3>🔄 Update System</h3>
-                <p>Keep your packages up to date with automatic version checking and easy updates.</p>
+                <p>Keep your system up to date with automated package updates and version checking.</p>
+                <ul>
+                    <li>Automatic updates</li>
+                    <li>Version comparison</li>
+                    <li>Dependency tracking</li>
+                </ul>
             </div>
-            
+
             <div class="feature-card">
                 <h3>🔒 Security</h3>
-                <p>Built-in permission management and root privilege handling for secure package operations.</p>
+                <p>Enhanced security features ensure safe package operations and system integrity.</p>
+                <ul>
+                    <li>Permission management</li>
+                    <li>Root privilege handling</li>
+                    <li>Secure package verification</li>
+                </ul>
             </div>
-            
+
             <div class="feature-card">
-                <h3>🛠️ Development Tools</h3>
-                <p>Developer-friendly tools for package creation, publishing, and maintenance.</p>
+                <h3>🛠️ Developer Tools</h3>
+                <p>Comprehensive tools for package development and maintenance.</p>
+                <ul>
+                    <li>Package creation utilities</li>
+                    <li>Publishing tools</li>
+                    <li>Development workflows</li>
+                </ul>
             </div>
         </div>
-        
-        <div class="installation">
-            <h2>Quick Start</h2>
-            <p>Install a package:</p>
-            <div class="cmd">$ sudo spm -I package_name</div>
-            
-            <p>Create a package from a directory:</p>
-            <div class="cmd">$ spm -P source_dir output.spm</div>
-            
-            <p>Update package database:</p>
-            <div class="cmd">$ sudo spm -u</div>
+
+        <div id="installation" class="installation">
+            <h2>Quick Start Guide</h2>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="install">Installation</div>
+                <div class="tab" data-tab="create">Create Package</div>
+                <div class="tab" data-tab="publish">Publish</div>
+            </div>
+
+            <div class="tab-content active" data-tab="install">
+                <p>Install a package from the repository:</p>
+                <div class="cmd">
+                    sudo spm -I package_name
+                    <button class="copy-btn">Copy</button>
+                </div>
+
+                <p>Update package database:</p>
+                <div class="cmd">
+                    sudo spm -u
+                    <button class="copy-btn">Copy</button>
+                </div>
+            </div>
+
+            <div class="tab-content" data-tab="create">
+                <p>Create a package from a directory:</p>
+                <div class="cmd">
+                    spm -P source_dir output.spm
+                    <button class="copy-btn">Copy</button>
+                </div>
+
+                <p>Create a package from a single file:</p>
+                <div class="cmd">
+                    spm -f input_file output.spm
+                    <button class="copy-btn">Copy</button>
+                </div>
+            </div>
+
+            <div class="tab-content" data-tab="publish">
+                <p>Publish a package to the repository:</p>
+                <div class="cmd">
+                    spm -b package.spm
+                    <button class="copy-btn">Copy</button>
+                </div>
+            </div>
         </div>
-        
-        <h2>Documentation</h2>
-        <p>
-            For full documentation and more examples, visit the 
-            <a href="https://github.com/barely-a-dev/spm_repo" style="color: var(--accent);">GitHub repository</a>.
-        </p>
+
+        <div id="documentation" class="documentation">
+            <h2>Documentation</h2>
+            <p>
+                For complete documentation, examples, and best practices, visit our
+                <a href="https://github.com/barely-a-dev/spm_repo" style="color: var(--accent);">GitHub repository</a>.
+            </p>
+        </div>
     </main>
+
+    <footer>
+        <div class="container">
+            <p>SPM is open source software. Contributions are welcome!</p>
+            <p>Licensed under GPL 3.0 License</p>
+        </div>
+    </footer>
+
+    <script>
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabId = tab.getAttribute('data-tab');
+
+                // Update tabs
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // Update content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                    if (content.getAttribute('data-tab') === tabId) {
+                        content.classList.add('active');
+                    }
+                });
+            });
+            tab.setAttribute('tabindex', '0');
+            tab.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    tab.click();
+                }
+            });
+        });
+
+        // Copy functionality
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const command = btn.parentElement.textContent.trim().replace('Copy', '');
+                try {
+                    await navigator.clipboard.writeText(command);
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        btn.textContent = 'Copy';
+                    }, 2000);
+                } catch (err) {
+                    btn.textContent = 'Failed!';
+                    setTimeout(() => {
+                        btn.textContent = 'Copy';
+                    }, 2000);
+                }
+            });
+        });
+    </script>
 </body>
+
 </html>

@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
+use std::path::PathBuf;
+// TODO: locking DB
 
 pub struct Database {
     src: String,
@@ -29,8 +31,7 @@ impl Database {
         })
     }
     pub fn load(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
-        path.push(".spm.db");
+        let path = PathBuf::from("/var/lib/spm/spm.db");
 
         if !path.exists() {
             File::create(&path)?;
@@ -128,8 +129,7 @@ impl Database {
         }
 
         // Save to disk
-        let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
-        path.push(".spm.db");
+        let path = PathBuf::from("/var/lib/spm/spm.db");
 
         let mut file = File::create(&path)?;
         for (name, version) in &self.entries {
@@ -199,8 +199,7 @@ impl Cache {
             installed_packages: HashMap::new(),
         };
 
-        let mut path = dirs::home_dir().expect("Cannot find home directory");
-        path.push(".spm.cache");
+        let path = PathBuf::from("/var/cache/spm/spm.cache");
 
         if path.exists() {
             if let Ok(contents) = fs::read_to_string(&path) {
@@ -223,8 +222,7 @@ impl Cache {
     }
 
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
-        let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
-        path.push(".spm.cache");
+        let path = PathBuf::from("/var/cache/spm/spm.cache");
 
         let mut file = File::create(&path)?;
 
