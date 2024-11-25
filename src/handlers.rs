@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::{
     error::Error,
-    fs,
+    fs::{self, File},
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
@@ -21,6 +21,7 @@ pub fn handle_package_file(
     input_file: &str,
     output_file: &str,
     allow_large: bool,
+    allow_empty_ver: bool,
 ) -> Result<(), Box<dyn Error>> {
     let file_path = Path::new(input_file);
     let mut package = Package::new();
@@ -68,7 +69,6 @@ pub fn handle_package_file(
 
     // Use just the file name as the relative path
     let relative_path = PathBuf::from(file_path.file_name().ok_or("Invalid file name")?);
-
     // Check if file requires root permissions
     if file_path.starts_with("/usr/bin")
         || file_path.starts_with("/usr/sbin")
@@ -93,24 +93,28 @@ pub fn handle_package_file(
     let (parsed_name, parsed_version) = parse_name_and_version(&name);
     package.name = parsed_name;
 
-    // Only ask for version if we couldn't parse it from the filename
-    if let Some(version) = parsed_version {
-        package.version = version;
-    } else {
-        let (_, versionp) = parse_name_and_version(output_file);
-        if let Some(version) = versionp {
+    // Only ask for version if we couldn't parse it from the filename and allow_empty_ver is false
+    if !allow_empty_ver
+    {
+        if let Some(version) = parsed_version {
             package.version = version;
         } else {
-            println!("Enter package version (e.g. 1.0.0):");
-            let mut version = String::new();
-            std::io::stdin().read_line(&mut version)?;
-            package.version = version.trim().to_string();
+            let (_, versionp) = parse_name_and_version(output_file);
+            if let Some(version) = versionp {
+                package.version = version;
+            } else {
+                println!("Enter package version (e.g. 1.0.0):");
+                let mut version = String::new();
+                std::io::stdin().read_line(&mut version)?;
+                package.version = version.trim().to_string();
+            }
         }
     }
 
     // Stage 4: Save package (80-100%)
     pb.set_prefix("Saving");
     pb.set_message("Writing package file...");
+
     package.save_package(Path::new(output_file))?;
 
     pb.set_position(100);
@@ -443,8 +447,12 @@ pub fn handle_publish_package(
         .to_str()
         .ok_or("Invalid UTF-8 in filename")?;
 
-    let (filename, ver) =
+    let (filename, mut ver) =
         helpers::parse_name_and_version(filename.split('/').last().unwrap_or("unnamed_f"));
+
+    if ver.is_none() {
+        ver = Some(_package.version);
+    }
 
     // Encode contents as base64
     let encoded_contents = general_purpose::STANDARD.encode(&file_contents);
@@ -457,6 +465,7 @@ pub fn handle_publish_package(
                 owner,
                 repo,
                 helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+                    .trim_end_matches(".spm")
             );
 
             // Check if file exists
@@ -499,6 +508,7 @@ pub fn handle_publish_package(
                     owner,
                     repo,
                     helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+                        .trim_end_matches(".spm")
                 );
 
                 let ver_content = ver.unwrap_or("UNKNOWN".to_string());
@@ -590,6 +600,7 @@ pub fn handle_publish_package(
                 owner,
                 repo,
                 helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+                    .trim_end_matches(".spm")
             );
 
             let mut commit_data = HashMap::new();
@@ -618,6 +629,7 @@ pub fn handle_publish_package(
                 owner,
                 repo,
                 helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+                    .trim_end_matches(".spm")
             );
 
             let ver_content = ver.clone().unwrap_or("UNKNOWN".to_string());
@@ -984,5 +996,197 @@ pub fn handle_remove_package(
             }
         }
         _ => Err("You don't have permission to remove packages from this repository".into()),
+    }
+}
+
+pub fn handle_dev_pub(dir: PathBuf, config: &mut Config, database: &db::Database) -> Result<(), Box<dyn Error>> {
+    // Check if directory exists
+    if !dir.exists() || !dir.is_dir() {
+        return Err("Invalid project directory".into());
+    }
+
+    let mut package_name = None;
+    let mut package_version = None;
+    let mut build_command = None;
+    let mut output_file = None;
+
+    // Detect build system and configuration
+    if dir.join("Cargo.toml").exists() {
+        // Rust project
+        let cargo_toml = fs::read_to_string(dir.join("Cargo.toml"))?;
+        let cargo_doc: toml::Value = toml::from_str(&cargo_toml)?;
+        
+        if let Some(package) = cargo_doc.get("package") {
+            package_name = package.get("name").and_then(|v| v.as_str()).map(String::from);
+            package_version = package.get("version").and_then(|v| v.as_str()).map(String::from);
+        }
+        
+        build_command = Some(vec!["cargo", "build", "--release"]);
+        output_file = package_name.as_ref().map(|name| {
+            dir.join("target/release").join(name)
+        });
+    } else if dir.join("package.json").exists() {
+        // Node.js project
+        let package_json = fs::read_to_string(dir.join("package.json"))?;
+        let pkg_doc: serde_json::Value = serde_json::from_str(&package_json)?;
+        
+        package_name = pkg_doc.get("name").and_then(|v| v.as_str()).map(String::from);
+        package_version = pkg_doc.get("version").and_then(|v| v.as_str()).map(String::from);
+        
+        if let Some(scripts) = pkg_doc.get("scripts") {
+            if scripts.get("build").is_some() {
+                build_command = Some(vec!["npm", "run", "build"]);
+                output_file = Some(dir.join("dist").join(package_name.as_ref().unwrap_or(&"main".to_string())));
+            }
+        }
+    } else if dir.join("CMakeLists.txt").exists() {
+        // CMake project
+        let cmake_lists = fs::read_to_string(dir.join("CMakeLists.txt"))?;
+        
+        // Try to extract project name and version from CMakeLists.txt
+        if let Some(proj_line) = cmake_lists.lines()
+            .find(|l| l.trim().starts_with("project(")) {
+            let parts: Vec<&str> = proj_line.split_whitespace().collect();
+            if parts.len() > 1 {
+                package_name = Some(parts[1].trim_matches(|c| c == '(' || c == ')').to_string());
+            }
+            if parts.len() > 2 {
+                package_version = Some(parts[2].trim_matches(|c| c == '(' || c == ')').to_string());
+            }
+        }
+        
+        // Create build directory and run cmake + make
+        fs::create_dir_all(dir.join("build"))?;
+        build_command = Some(vec!["sh", "-c", "cd build && cmake .. && make"]);
+        output_file = package_name.as_ref().map(|name| dir.join("build").join(name));
+    } else if dir.join("meson.build").exists() {
+        // Meson project
+        let meson_build = fs::read_to_string(dir.join("meson.build"))?;
+        
+        // Try to extract project name and version from meson.build
+        if let Some(proj_line) = meson_build.lines()
+            .find(|l| l.trim().starts_with("project(")) {
+            let parts: Vec<&str> = proj_line.split('\'').collect();
+            if parts.len() > 1 {
+                package_name = Some(parts[1].to_string());
+            }
+            if parts.len() > 3 {
+                package_version = Some(parts[3].to_string());
+            }
+        }
+        
+        fs::create_dir_all(dir.join("build"))?;
+        build_command = Some(vec!["sh", "-c", "meson setup build && cd build && ninja"]);
+        output_file = package_name.as_ref().map(|name| dir.join("build").join(name));
+    } else if dir.join("configure.ac").exists() || dir.join("configure").exists() {
+        // Autotools project
+        if dir.join("configure.ac").exists() {
+            let configure_ac = fs::read_to_string(dir.join("configure.ac"))?;
+            
+            // Try to extract package info from configure.ac
+            if let Some(line) = configure_ac.lines()
+                .find(|l| l.trim().starts_with("AC_INIT")) {
+                let parts: Vec<&str> = line.split('[').collect();
+                if parts.len() > 2 {
+                    package_name = Some(parts[1].trim_matches(|c| c == '[' || c == ']').to_string());
+                    package_version = Some(parts[2].trim_matches(|c| c == '[' || c == ']').to_string());
+                }
+            }
+            
+            build_command = Some(vec!["sh", "-c", "autoreconf -i && ./configure && make"]);
+        } else {
+            build_command = Some(vec!["sh", "-c", "./configure && make"]);
+        }
+        
+        output_file = package_name.as_ref().map(|name| dir.join(name));
+    } else if dir.join("Makefile").exists() {
+        // Simple Makefile project
+        let makefile = fs::read_to_string(dir.join("Makefile"))?;
+        
+        // Try to find the output binary name from the Makefile
+        if let Some(line) = makefile.lines()
+            .find(|l| l.trim().starts_with("TARGET") || l.trim().starts_with("NAME")) {
+            if let Some(name) = line.split('=').nth(1) {
+                package_name = Some(name.trim().to_string());
+            }
+        }
+        
+        build_command = Some(vec!["make"]);
+        output_file = package_name.as_ref().map(|name| dir.join(name));
+    }
+
+    if build_command.is_none() {
+        return Err("Unsupported or unrecognized project type".into());
+    }
+
+    // Execute build command
+    let status = std::process::Command::new(build_command.clone().unwrap()[0])
+        .args(&build_command.unwrap()[1..])
+        .current_dir(&dir)
+        .status()?;
+
+    if !status.success() {
+        return Err("Build failed".into());
+    }
+
+    // Create temporary package file
+    let temp_dir = std::env::temp_dir();
+    let package_file = temp_dir.join(format!("{}.spm", 
+        package_name.as_ref().unwrap_or(&"unnamed".to_string())));
+
+    if let Some(output) = output_file {
+        if output.exists() {
+            if let Ok((uid, gid)) = crate::helpers::get_real_user() {
+                // Create temp file with proper ownership
+                if let Ok(file) = File::create(&package_file) {
+                    drop(file); // Close the file handle
+                    
+                    // Set proper permissions
+                    fs::set_permissions(&package_file, fs::Permissions::from_mode(0o644))?;
+                    
+                    // Set proper ownership
+                    std::os::unix::fs::chown(&package_file, Some(uid.0), Some(gid))?;
+                }
+            }
+
+            // Package the built file
+            handle_package_file(
+                output.to_str().unwrap(),
+                package_file.to_str().unwrap(),
+                true, // allow large in case
+                true, // Sets the version below, so this is fine.
+            )?;
+
+            let mut pack = Package::load_package(&package_file).expect("Failed to load package, may be invalid");
+            pack.version = package_version.unwrap_or("UNKNOWN".to_string());
+            pack.name = package_name.unwrap_or("unnamed".to_string());
+            println!("Set up package {} v{}", pack.name, pack.version);
+            
+            // Remove and recreate with proper permissions + ver/name
+            let _ = fs::remove_file(&package_file);
+            pack.save_package(&package_file)?;
+
+            // Ensure the file is readable before publishing
+            fs::set_permissions(&package_file, fs::Permissions::from_mode(0o644))?;
+            
+            let publish_result = handle_publish_package(
+                package_file.to_str().unwrap(),
+                database,
+                config,
+            );
+
+            // Clean up temp file regardless of publish result
+            let _ = fs::remove_file(&package_file);
+
+            // Now handle the publish result
+            publish_result?;
+            
+            println!("Successfully built and published package");
+            Ok(())
+        } else {
+            Err("Build output file not found".into())
+        }
+    } else {
+        Err("Could not determine output file location".into())
     }
 }

@@ -100,9 +100,7 @@ impl Database {
                     // Get version from .ver file
                     let ver_url = format!(
                         "https://api.github.com/repos/{}/{}/contents/{}.ver",
-                        owner,
-                        repo,
-                        package_name
+                        owner, repo, package_name
                     );
 
                     if let Ok(ver_response) = client
@@ -145,7 +143,8 @@ impl Database {
         // Remove the unused variable by directly cloning the query
         self.entries.get(&query).map(|_| query)
     }
-
+    // In /home/user/Projects/src/Rust/spm/src/db.rs
+    // Modify the check_updates function to return the full filename:
     pub fn check_updates(&self) -> Vec<(String, String, String)> {
         // Returns (name, current_version, available_version)
         let mut updates = Vec::new();
@@ -155,24 +154,32 @@ impl Database {
             let parts: Vec<&str> = self.src.split('/').collect();
             let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
 
-            let api_url = format!(
-                "https://api.github.com/repos/{}/{}/contents/{}.spm",
+            // Get version from .ver file
+            let ver_url = format!(
+                "https://api.github.com/repos/{}/{}/contents/{}.ver",
                 owner, repo, package
             );
 
-            if let Ok(response) = client
-                .get(&api_url)
+            if let Ok(ver_response) = client
+                .get(&ver_url)
                 .header("User-Agent", "spm-client")
                 .send()
             {
-                if let Ok(content) = response.json::<Value>() {
-                    if let Some(latest_version) = content["version"].as_str() {
-                        if latest_version != current_version {
-                            updates.push((
-                                package.clone(),
-                                current_version.clone(),
-                                latest_version.to_string(),
-                            ));
+                if let Ok(ver_content) = ver_response.json::<Value>() {
+                    if let Some(content) = ver_content["content"].as_str() {
+                        if let Ok(decoded) = base64::engine::general_purpose::STANDARD
+                            .decode(content.replace('\n', ""))
+                        {
+                            if let Ok(latest_version) = String::from_utf8(decoded) {
+                                let latest_version = latest_version.trim();
+                                if latest_version != current_version {
+                                    updates.push((
+                                        format!("{}.spm", package), // Add .spm extension
+                                        current_version.clone(),
+                                        latest_version.to_string(),
+                                    ));
+                                }
+                            }
                         }
                     }
                 }

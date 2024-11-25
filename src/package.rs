@@ -8,7 +8,7 @@
 7. Data?
 */
 
-use crate::helpers::{get_real_user, read_varint, write_varint, is_root};
+use crate::helpers::{get_real_user, is_root, read_varint, write_varint};
 use crate::patch::Patch;
 use std::collections::HashMap;
 use std::error::Error;
@@ -51,7 +51,7 @@ impl Package {
             files_to_empty: Vec::new(),
             requires_root: false,
         }
-    }    
+    }
 
     pub fn add_file(
         &mut self,
@@ -92,7 +92,7 @@ impl Package {
 
         if self.name.is_empty() || self.version.is_empty() {
             return Err("Package name and version must be specified".into());
-        }        
+        }
 
         // Write package name
         let name_bytes = self.name.as_bytes();
@@ -241,15 +241,16 @@ impl Package {
         let version = String::from_utf8(version_bytes)?;
 
         let mut package = Package::new();
-        package.name = name;
-        package.version = version;
+        package.name = name.clone();
+        package.version = version.clone();
 
         let mut compressed = Vec::new();
         file.read_to_end(&mut compressed)?;
         let data = decode_all(&compressed[..])?;
         let mut cursor = std::io::Cursor::new(data);
 
-        let mut package = Package::new();
+        package.name = name;
+        package.version = version;
 
         // Read requires_root flag
         let mut requires_root = [0u8];
