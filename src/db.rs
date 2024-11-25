@@ -140,11 +140,8 @@ impl Database {
     }
 
     pub fn exact_search(&self, query: String) -> Option<String> {
-        // Remove the unused variable by directly cloning the query
         self.entries.get(&query).map(|_| query)
     }
-    // In /home/user/Projects/src/Rust/spm/src/db.rs
-    // Modify the check_updates function to return the full filename:
     pub fn check_updates(&self) -> Vec<(String, String, String)> {
         // Returns (name, current_version, available_version)
         let mut updates = Vec::new();
@@ -189,5 +186,76 @@ impl Database {
     }
     pub fn src(&self) -> &String {
         &self.src
+    }
+}
+
+pub struct Cache {
+    installed_packages: HashMap<String, Vec<String>>, // Hashmap key is pkg names, Vec is installed files
+}
+// TODO: make it store not just installed files and remove them, but also removed files and their contents, emptied files and theirs, files before patches
+impl Cache {
+    pub fn load() -> Self {
+        let mut cache = Cache {
+            installed_packages: HashMap::new(),
+        };
+
+        let mut path = dirs::home_dir().expect("Cannot find home directory");
+        path.push(".spm.cache");
+
+        if path.exists() {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                for line in contents.lines() {
+                    if let Some((package, files_str)) = line.split_once('=') {
+                        // Remove the brackets and split by commas
+                        let files_str = files_str.trim_start_matches('[').trim_end_matches(']');
+                        let files: Vec<String> = files_str
+                            .split(',')
+                            .map(|s| s.trim().trim_matches('"').to_string())
+                            .collect();
+
+                        cache.installed_packages.insert(package.to_string(), files);
+                    }
+                }
+            }
+        }
+
+        cache
+    }
+
+    pub fn save(&self) -> Result<(), Box<dyn Error>> {
+        let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
+        path.push(".spm.cache");
+
+        let mut file = File::create(&path)?;
+
+        for (package, files) in &self.installed_packages {
+            let files_str = files
+                .iter()
+                .map(|s| format!("\"{}\"", s))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            writeln!(file, "{}=[{}]", package, files_str)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn add(&mut self, (package, files): (String, Vec<String>)) {
+        self.installed_packages.insert(package, files);
+    }
+
+    pub fn get_installed_files(&self, pack: String) -> Option<Vec<String>> {
+        self.installed_packages
+            .get(&pack)
+            .cloned()
+    }
+
+    pub fn remove(&mut self, package: &str) -> Option<Vec<String>> {
+        self.installed_packages.remove(package)
+    }
+
+    pub fn list_installed(&self) -> Vec<String> {
+        self.installed_packages.keys().cloned().collect()
     }
 }

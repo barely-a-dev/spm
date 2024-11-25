@@ -5,6 +5,7 @@ mod package;
 mod patch;
 
 use clap::{Arg, ArgAction, Command as ClapCommand};
+use db::Cache;
 use package::Package;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -96,6 +97,7 @@ fn main() {
     } else {
         db::Database::new()
     };
+    let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
         .version("1.4.16")
@@ -235,7 +237,23 @@ fn main() {
                 .help("Print the current version")
                 .action(ArgAction::Version)
         )
+        .arg(
+            Arg::new("uninstall")
+                .short('R')
+                .long("uninstall")
+                .help("Uninstall a package and remove its files")
+                .num_args(1)
+                .value_name("PACKAGE"),
+        )
+        .arg(
+            Arg::new("list")
+                .short('l')
+                .long("list")
+                .help("List installed packages and their files. Optionally specify a package name")
+                .num_args(0..=1)
+                .value_name("PACKAGE"),
+        )        
         .get_matches();
 
-    helpers::get_matches(matches, &mut config, &mut database);
+    helpers::get_matches(matches, &mut config, &mut database, &mut cache);
 }

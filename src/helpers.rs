@@ -1,3 +1,4 @@
+use crate::db::Cache;
 use crate::db::Database;
 use crate::handlers::*;
 use crate::patch::Patch;
@@ -94,7 +95,12 @@ pub fn require_root(operation: &str) {
     }
 }
 
-pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mut Database) {
+pub fn get_matches(
+    matches: clap::ArgMatches,
+    config: &mut Config,
+    database: &mut Database,
+    cache: &mut Cache,
+) {
     if matches.contains_id("dev-pub") {
         let dir = matches
             .get_one::<String>("dev-pub")
@@ -192,7 +198,7 @@ pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mu
         let package_path = args.next().expect("Package file argument required");
         let target_dir = args.next().map(|s| s.as_str()); // Convert to Option<&str>
 
-        if let Err(e) = handle_install_package(package_path, target_dir) {
+        if let Err(e) = handle_install_package(package_path, target_dir, cache) {
             eprintln!("Failed to install package: {}", e);
             process::exit(1);
         }
@@ -252,7 +258,7 @@ pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mu
         require_root("installing packages");
         if package.starts_with("./") || package.ends_with(".spm") {
             // Local package installation
-            if let Err(e) = handle_install_package(package, None) {
+            if let Err(e) = handle_install_package(package, None, cache) {
                 eprintln!("Failed to install local package: {}", e);
                 process::exit(1);
             }
@@ -305,7 +311,8 @@ pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mu
                                         process::exit(1);
                                     }
                                     // Install downloaded package
-                                    if let Err(e) = handle_install_package(&temp_path, None) {
+                                    if let Err(e) = handle_install_package(&temp_path, None, cache)
+                                    {
                                         eprintln!("Failed to install package: {}", e);
                                         process::exit(1);
                                     }
@@ -378,7 +385,7 @@ pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mu
                                     eprintln!("Failed to write package file: {}", e);
                                     continue;
                                 }
-                                match handle_install_package(&temp_path, None) {
+                                match handle_install_package(&temp_path, None, cache) {
                                     Ok(_) => println!("Updated {}", name.trim_end_matches(".spm")),
                                     Err(e) => eprintln!(
                                         "Failed to update {}: {}",
@@ -418,6 +425,44 @@ pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mu
         if let Err(e) = handle_remove_package(package_file, &database, config) {
             eprintln!("Failed to remove package: {}", e);
             process::exit(1);
+        }
+    } else if let Some(package) = matches.get_one::<String>("uninstall") {
+        if let Err(e) = handle_uninstall_package(package, cache) {
+            eprintln!("Failed to uninstall package: {}", e);
+            process::exit(1);
+        }
+    } else if matches.contains_id("list") {
+        match matches.get_one::<String>("list") {
+            Some(package) => {
+                // List files for specific package
+                if let Some(files) = cache.get_installed_files(package.to_string()) {
+                    println!("Files installed by package {}:", package);
+                    for file in files {
+                        // Now we iterate over the Vec<String> inside the Some()
+                        println!("  {}", file);
+                    }
+                } else {
+                    eprintln!("Package {} is not installed", package);
+                    process::exit(1);
+                }
+            }
+            None => {
+                // List all installed packages and their files
+                let installed = cache.list_installed();
+                if installed.is_empty() {
+                    println!("No packages installed");
+                } else {
+                    println!("Installed packages:");
+                    for package in installed {
+                        println!("\n{}:", package);
+                        if let Some(files) = cache.get_installed_files(package.clone()) {
+                            for file in files {
+                                println!("  {}", file);
+                            }
+                        }
+                    }
+                }
+            }
         }
     } else {
         println!("Use -h or --help for usage information.");

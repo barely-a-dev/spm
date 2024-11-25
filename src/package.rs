@@ -19,6 +19,7 @@ use std::os::unix::fs::chown;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use zstd::{decode_all, encode_all};
+use crate::Cache;
 
 const MAGIC: &[u8] = b"SPKG";
 const VERSION: u8 = 1;
@@ -178,7 +179,6 @@ impl Package {
         let compressed = encode_all(&data[..], 21)?;
         file.write_all(&compressed)?;
 
-        // In Package::save_package method, replace the existing ownership handling code with:
         if unsafe { libc::geteuid() } == 0 {
             // We're running as root (via sudo)
             if let Ok((sudo_user, _)) = get_real_user() {
@@ -380,12 +380,15 @@ impl Package {
         Ok(package)
     }
 
-    pub fn install(&self, target_dir: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    pub fn install(&self, target_dir: Option<&Path>, cache: &mut Cache) -> Result<(), Box<dyn Error>> {
         // Check if root is required and we're not root
         if self.requires_root && !is_root() {
             return Err("This package requires root privileges to install".into());
         }
-
+    
+        // Keep track of installed files
+        let mut installed_files = Vec::new();
+    
         // Remove files marked for removal
         for path in &self.files_to_remove {
             let full_path = if let Some(target) = target_dir {
@@ -397,7 +400,7 @@ impl Package {
                 fs::remove_file(full_path)?;
             }
         }
-
+    
         // Empty files marked for emptying via truncation
         for path in &self.files_to_empty {
             let full_path = if let Some(target) = target_dir {
@@ -409,7 +412,7 @@ impl Package {
                 fs::File::create(full_path)?;
             }
         }
-
+    
         // Install new files
         for (_, entry) in &self.files {
             let final_target = if let Some(custom_dir) = &entry.target_dir {
@@ -424,18 +427,21 @@ impl Package {
                     "No target directory specified and no default directory configured".into(),
                 );
             };
-
+    
             let target_path = final_target.join(&entry.path);
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent)?;
             }
             let mut file = File::create(&target_path)?;
             file.write_all(&entry.contents)?;
-
+    
             let permissions = fs::Permissions::from_mode(entry.permissions);
             fs::set_permissions(&target_path, permissions)?;
+            
+            // Add installed file to tracking list
+            installed_files.push(target_path.to_string_lossy().into_owned());
         }
-
+    
         // Apply patches
         for patch in &self.patches {
             if let Some(target) = target_dir {
@@ -444,7 +450,11 @@ impl Package {
                 patch.apply("/")?;
             }
         }
-
+    
+        // Update cache with installed files
+        cache.add((self.name.clone(), installed_files));
+        cache.save()?;
+    
         Ok(())
-    }
+    }    
 }

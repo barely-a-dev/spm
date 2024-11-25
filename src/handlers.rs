@@ -1,4 +1,5 @@
 use crate::db;
+use crate::db::Cache;
 use crate::helpers;
 use crate::helpers::parse_name_and_version;
 use crate::Config;
@@ -366,9 +367,10 @@ pub fn handle_verify_package(package_path: &str) -> Result<(), Box<dyn Error>> {
 pub fn handle_install_package(
     package_path: &str,
     target_dir: Option<&str>,
+    cache: &mut Cache
 ) -> Result<(), Box<dyn Error>> {
     let package = Package::load_package(Path::new(package_path))?;
-    package.install(target_dir.map(Path::new))?;
+    package.install(target_dir.map(Path::new), cache)?;
     println!("Package installed successfully");
     Ok(())
 }
@@ -805,7 +807,6 @@ pub fn handle_remove_package(
                 .json(&delete_data)
                 .send()?;
 
-            // In the "admin" | "write" => match arm, after the successful delete_response check:
             if delete_response.status().is_success() {
                 // Also delete the version file
                 let ver_file_url = format!(
@@ -1188,5 +1189,25 @@ pub fn handle_dev_pub(dir: PathBuf, config: &mut Config, database: &db::Database
         }
     } else {
         Err("Could not determine output file location".into())
+    }
+}
+
+pub fn handle_uninstall_package(package_name: &str, cache: &mut Cache) -> Result<(), Box<dyn Error>> {
+    if let Some(installed_files) = cache.remove(package_name) {
+        println!("Uninstalling package {}...", package_name);
+        
+        for file in installed_files {
+            if let Err(e) = fs::remove_file(&file) {
+                eprintln!("Warning: Failed to remove {}: {}", file, e);
+            } else {
+                println!("Removed {}", file);
+            }
+        }
+        
+        cache.save()?;
+        println!("Package {} uninstalled successfully", package_name);
+        Ok(())
+    } else {
+        Err(format!("Package {} is not installed", package_name).into())
     }
 }
