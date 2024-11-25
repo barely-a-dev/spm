@@ -1163,7 +1163,7 @@ pub fn handle_dev_pub(dir: PathBuf, config: &mut Config, database: &db::Database
             let mut pack = Package::load_package(&package_file).expect("Failed to load package, may be invalid");
             pack.version = package_version.unwrap_or("UNKNOWN".to_string());
             pack.name = package_name.unwrap_or("unnamed".to_string());
-            println!("Set up package {} v{}", pack.name, pack.version);
+            println!("Successfully set up package {} v{}.", pack.name, pack.version);
             
             // Remove and recreate with proper permissions + ver/name
             let _ = fs::remove_file(&package_file);

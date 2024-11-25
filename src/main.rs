@@ -100,7 +100,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("2.5.17")
+        .version("2.5.18")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -230,13 +230,6 @@ fn main() {
                 .num_args(0..=1)
                 .value_name("PROJ_DIR"),
         )
-        .disable_version_flag(true)
-        .arg(
-            Arg::new("print_ver")
-                .long("version")
-                .help("Print the current version")
-                .action(ArgAction::Version)
-        )
         .arg(
             Arg::new("uninstall")
                 .short('R')
@@ -253,18 +246,25 @@ fn main() {
                 .num_args(0..=1)
                 .value_name("PACKAGE"),
         )
+        // .arg(
+        //     Arg::new("do-nothing")
+        //         .long("wait")
+        //         .help("DEBUG FUNCTION")
+        //         .num_args(0..=1)
+        //         .value_name("WAIT_LEN")
+        // )
+        // .arg(
+        //     Arg::new("lock-test")
+        //         .long("lock")
+        //         .help("DEBUG FUNCTION")
+        //         .action(ArgAction::SetTrue)
+        // )
+        .disable_version_flag(true)
         .arg(
-            Arg::new("do-nothing")
-                .long("wait")
-                .help("DEBUG FUNCTION")
-                .num_args(0..=1)
-                .value_name("WAIT_LEN")
-        )
-        .arg(
-            Arg::new("lock-test")
-                .long("lock")
-                .help("DEBUG FUNCTION")
-                .action(ArgAction::SetTrue)
+            Arg::new("print_ver")
+                .long("version")
+                .help("Print the current version")
+                .action(ArgAction::Version)
         )
         .get_matches();
 
