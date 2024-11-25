@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPM - Simple Package Manager</title>
+    <style>
+        :root {
+            --primary: #2d333b;
+            --secondary: #22272e;
+            --text: #adbac7;
+            --accent: #539bf5;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background: var(--primary);
+            color: var(--text);
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        header {
+            background: var(--secondary);
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        h1, h2 {
+            color: #fff;
+        }
+        
+        .version {
+            color: var(--accent);
+            font-size: 0.9rem;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+        
+        .feature-card {
+            background: var(--secondary);
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        code {
+            background: #1b1f24;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        .installation {
+            background: var(--secondary);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+        }
+        
+        .cmd {
+            background: #1b1f24;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>SPM - Simple Package Manager</h1>
+            <span class="version">Version 1.4.17</span>
+        </div>
+    </header>
+    
+    <main class="container">
+        <p>
+            SPM is a lightweight, efficient package manager designed for simplicity and ease of use.
+            It supports both local package installation and remote package management through GitHub repositories.
+        </p>
+        
+        <div class="features">
+            <div class="feature-card">
+                <h3>📦 Package Management</h3>
+                <p>Create, install, and manage packages with simple commands. Supports both local and remote packages.</p>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🔄 Update System</h3>
+                <p>Keep your packages up to date with automatic version checking and easy updates.</p>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🔒 Security</h3>
+                <p>Built-in permission management and root privilege handling for secure package operations.</p>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🛠️ Development Tools</h3>
+                <p>Developer-friendly tools for package creation, publishing, and maintenance.</p>
+            </div>
+        </div>
+        
+        <div class="installation">
+            <h2>Quick Start</h2>
+            <p>Install a package:</p>
+            <div class="cmd">$ sudo spm -I package_name</div>
+            
+            <p>Create a package from a directory:</p>
+            <div class="cmd">$ spm -P source_dir output.spm</div>
+            
+            <p>Update package database:</p>
+            <div class="cmd">$ sudo spm -u</div>
+        </div>
+        
+        <h2>Documentation</h2>
+        <p>
+            For full documentation and more examples, visit the 
+            <a href="https://github.com/barely-a-dev/spm_repo" style="color: var(--accent);">GitHub repository</a>.
+        </p>
+    </main>
+</body>
+</html>
