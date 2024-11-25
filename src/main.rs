@@ -100,7 +100,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("2.5.18")
+        .version("2.6.18")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -189,7 +189,7 @@ fn main() {
                 .short('I')
                 .long("install")
                 .help("Install a package from the database or local file")
-                .num_args(1)
+                .num_args(1..)
                 .value_name("PACKAGE"),
         )
         .arg(
@@ -197,7 +197,8 @@ fn main() {
                 .short('U')
                 .long("update")
                 .help("Check for and install package updates")
-                .action(ArgAction::SetTrue),
+                .num_args(0..)
+                .value_name("PACKAGE_NAME")
         )
         .arg(
             Arg::new("allow-large")

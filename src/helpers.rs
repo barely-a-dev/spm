@@ -105,6 +105,7 @@ pub fn get_matches(
     cache: &mut Cache,
 ) {
     if matches.contains_id("dev-pub") {
+        require_root("publishing from source");
         let dir = matches
             .get_one::<String>("dev-pub")
             .map(|s| PathBuf::from(s))
@@ -261,104 +262,115 @@ pub fn get_matches(
                 }
             }
         }
-    } else if let Some(package) = matches.get_one::<String>("install") {
+    } else if matches.contains_id("install") {
         require_root("installing packages");
-        let _lock = Lock::new("db");
-        let _cache_lock = Lock::new("cache");
-        let _bin_lock = Lock::new("bin");
-        if package.starts_with("./") || package.ends_with(".spm") {
-            // Local package installation
-            if let Err(e) = handle_install_package(package, None, cache) {
-                eprintln!("Failed to install local package: {}", e);
-                process::exit(1);
-            }
-        } else {
-            // Database package installation
-            if !config
-                .get("net_enabled")
-                .unwrap_or("".to_string())
-                .parse::<bool>()
-                .unwrap_or(false)
-            {
-                eprintln!(
-                    "Package installation from database requires net_enabled=true in configuration"
-                );
-                process::exit(1);
-            }
+        let _lock = Lock::new("db").expect("Failed to lock");
+        let _cache_lock = Lock::new("cache").expect("Failed to lock");
+        let _bin_lock = Lock::new("bin").expect("Failed to lock");
 
-            // First verify package exists
-            if let Some(exact_package) = database.exact_search(package.to_string()) {
-                let client = reqwest::blocking::Client::new();
-                let parts: Vec<&str> = database.src().split('/').collect();
-                let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
+        if let Some(packages) = matches.get_many::<String>("install") {
+            let client = reqwest::blocking::Client::new();
+            let mut success_count = 0;
+            let total_packages = packages.len();
 
-                // Download package from GitHub
-                println!("Downloading package {}...", exact_package);
-                let url = if database.src().contains("github.com") {
-                    format!(
-                        "https://raw.githubusercontent.com/{}/{}/main/{}",
-                        owner, repo, exact_package
-                    )
-                } else {
-                    // MAYBEDO: Custom sources outside of GH
-                    format!("{}/{}", database.src(), exact_package)
-                };
-                match client.get(&url).header("User-Agent", "spm-client").send() {
-                    Ok(response) => {
-                        if response.status().is_success() {
-                            // Save to temporary file
-                            let temp_path = format!("/tmp/{}", exact_package);
-                            if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .write(true)
-                                .create(true)
-                                .mode(0o666) // Set appropriate permissions
-                                .open(&temp_path)
-                            {
-                                if let Ok(content) = response.bytes() {
-                                    if let Err(e) = file.write_all(&content) {
-                                        eprintln!("Failed to write package file: {}", e);
-                                        process::exit(1);
-                                    }
-                                    // Install downloaded package
-                                    if let Err(e) = handle_install_package(&temp_path, None, cache)
-                                    {
-                                        eprintln!("Failed to install package: {}", e);
-                                        process::exit(1);
-                                    }
-                                    // Clean up
-                                    let _ = fs::remove_file(&temp_path);
-                                    println!("Package {} installed successfully", exact_package);
-                                }
-                            } else {
-                                eprintln!("Failed to create temporary file in /tmp");
-                                process::exit(1);
-                            }
-                        } else {
-                            eprintln!("Failed to download package: HTTP {}", response.status());
-                            process::exit(1);
+            for package in packages {
+                if package.starts_with("./") || package.ends_with(".spm") {
+                    // Local package installation
+                    match handle_install_package(package, None, cache) {
+                        Ok(_) => {
+                            println!("Successfully installed local package: {}", package);
+                            success_count += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to install local package {}: {}", package, e);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Failed to download package: {}", e);
+                } else {
+                    // Remote package installation
+                    if !config
+                        .get("net_enabled")
+                        .unwrap_or("".to_string())
+                        .parse::<bool>()
+                        .unwrap_or(false)
+                    {
+                        eprintln!(
+                            "Package installation from database requires net_enabled=true in configuration"
+                        );
                         process::exit(1);
                     }
+
+                    match download_and_install_package(package, database, cache, &client) {
+                        Ok(_) => {
+                            success_count += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to install package {}: {}", package, e);
+                        }
+                    }
                 }
-            } else {
-                eprintln!("Package not found in database");
+            }
+
+            println!(
+                "\nInstallation complete: {}/{} packages installed successfully",
+                success_count, total_packages
+            );
+            if success_count != total_packages {
                 process::exit(1);
             }
         }
-    } else if matches.get_flag("update") {
+    } else if matches.contains_id("update") {
         require_root("installing updates");
-        let _lock = Lock::new("db");
-        let _cache_lock = Lock::new("cache");
-        let _bin_lock = Lock::new("bin");
+        let _lock = Lock::new("db").expect("Failed to lock");
+        let _cache_lock = Lock::new("cache").expect("Failed to lock");
+        let _bin_lock = Lock::new("bin").expect("Failed to lock");
+
+        // Verify network is enabled
+        if !config
+            .get("net_enabled")
+            .unwrap_or("".to_string())
+            .parse::<bool>()
+            .unwrap_or(false)
+        {
+            eprintln!("Updates require net_enabled=true in configuration");
+            process::exit(1);
+        }
+
         println!("Checking for updates...");
         let updates = database.check_updates();
-
         if updates.is_empty() {
             println!("All packages are up to date!");
+            return;
+        }
+
+        let client = reqwest::blocking::Client::new();
+
+        if let Some(packages) = matches.get_many::<String>("update") {
+            // Update specific packages
+            let packages: Vec<String> = packages.map(|s| s.to_string()).collect();
+            let mut updated = false;
+
+            for (name, current, latest) in &updates {
+                let package_name = name.trim_end_matches(".spm");
+                if packages.contains(&package_name.to_string()) {
+                    println!("Updating {}: {} -> {}", package_name, current, latest);
+
+                    match download_and_install_package(name, database, cache, &client) {
+                        Ok(_) => {
+                            println!("Successfully updated {}", package_name);
+                            updated = true;
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to update {}: {}", package_name, e);
+                        }
+                    }
+                }
+            }
+
+            if !updated {
+                println!("No updates available for specified packages");
+            }
         } else {
+            // Update all packages
             println!("Updates available:");
             for (name, current, latest) in &updates {
                 println!(
@@ -370,47 +382,26 @@ pub fn get_matches(
             }
 
             println!("\nInstalling updates...");
-            let client = reqwest::blocking::Client::new();
-            let parts: Vec<&str> = database.src().split('/').collect();
-            let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
+            let mut success_count = 0;
+            let total_updates = updates.len();
 
-            for (mut name, _, _) in updates {
-                name = name.trim_end_matches(".spm").to_string();
-                // Construct the full GitHub raw content URL
-                let url = format!(
-                    "https://raw.githubusercontent.com/{}/{}/main/{}",
-                    owner, repo, name
-                );
-
-                // Download to temporary file
-                let temp_path = format!("/tmp/{}", name);
-                if let Ok(response) = client.get(&url).header("User-Agent", "spm-client").send() {
-                    if response.status().is_success() {
-                        if let Ok(mut file) = std::fs::OpenOptions::new()
-                            .write(true)
-                            .create(true)
-                            .mode(0o666)
-                            .open(&temp_path)
-                        {
-                            if let Ok(content) = response.bytes() {
-                                if let Err(e) = file.write_all(&content) {
-                                    eprintln!("Failed to write package file: {}", e);
-                                    continue;
-                                }
-                                match handle_install_package(&temp_path, None, cache) {
-                                    Ok(_) => println!("Updated {}", name.trim_end_matches(".spm")),
-                                    Err(e) => eprintln!(
-                                        "Failed to update {}: {}",
-                                        name.trim_end_matches(".spm"),
-                                        e
-                                    ),
-                                }
-                                // Clean up
-                                let _ = std::fs::remove_file(&temp_path);
-                            }
-                        }
+            for (name, _, _) in updates {
+                match download_and_install_package(&name, database, cache, &client) {
+                    Ok(_) => {
+                        success_count += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to update {}: {}", name.trim_end_matches(".spm"), e);
                     }
                 }
+            }
+
+            println!(
+                "\nUpdate complete: {}/{} packages updated successfully",
+                success_count, total_updates
+            );
+            if success_count != total_updates {
+                process::exit(1);
             }
         }
     } else if matches.get_flag("update-db") {
@@ -439,6 +430,7 @@ pub fn get_matches(
             process::exit(1);
         }
     } else if let Some(package) = matches.get_one::<String>("uninstall") {
+        require_root("uninstalling packages");
         if let Err(e) = handle_uninstall_package(package, cache) {
             eprintln!("Failed to uninstall package: {}", e);
             process::exit(1);
@@ -485,4 +477,56 @@ pub fn get_matches(
     } else {
         println!("Use -h or --help for usage information.");
     }
+}
+
+// Helper function to download and install a package
+fn download_and_install_package(
+    package_name: &str,
+    database: &Database,
+    cache: &mut Cache,
+    client: &reqwest::blocking::Client,
+) -> Result<(), Box<dyn Error>> {
+    let parts: Vec<&str> = database.src().split('/').collect();
+    let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
+
+    println!("Downloading package {}...", package_name);
+
+    // Construct URL based on source type
+    let url = if database.src().contains("github.com") {
+        format!(
+            "https://raw.githubusercontent.com/{}/{}/main/{}",
+            owner, repo, package_name
+        )
+    } else {
+        format!("{}/{}", database.src(), package_name)
+    };
+
+    // Download package
+    let response = client.get(&url).header("User-Agent", "spm-client").send()?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to download package: HTTP {}", response.status()).into());
+    }
+
+    // Save to temporary file
+    let temp_path = format!("/tmp/{}", package_name);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .mode(0o666)
+        .open(&temp_path)?;
+
+    let content = response.bytes()?;
+    file.write_all(&content)?;
+
+    // Install downloaded package
+    handle_install_package(&temp_path, None, cache)?;
+
+    // Clean up
+    if let Err(e) = fs::remove_file(&temp_path) {
+        eprintln!("Warning: Failed to remove temporary file: {}", e);
+    }
+
+    println!("Package {} installed successfully", package_name);
+    Ok(())
 }

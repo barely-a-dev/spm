@@ -194,7 +194,7 @@ impl Database {
 pub struct Cache {
     installed_packages: HashMap<String, Vec<String>>, // Hashmap key is pkg names, Vec is installed files
 }
-// TODO: make it store not just installed files and remove them, but also removed files and their contents, emptied files and theirs, files before patches
+// TODO: make it store not just installed files and remove them, but also removed files and their contents, emptied files and theirs, files before patches to restore them
 impl Cache {
     pub fn load() -> Self {
         let mut cache = Cache {
