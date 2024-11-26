@@ -462,9 +462,7 @@ pub fn handle_publish_package(
     // First verify the package is valid
     let _package = Package::load_package(Path::new(package_path)).expect("Invalid package");
 
-    let tokenfile = PathBuf::from("~/.spm.token.encrypted")
-        .canonicalize()
-        .unwrap_or("/root/.spm.token.encrypted".into());
+    let tokenfile = dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted");
 
     let token = if tokenfile.exists() {
         match config.get_github_token() {

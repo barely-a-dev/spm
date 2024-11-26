@@ -11,9 +11,7 @@ impl Security {
         let mc = new_magic_crypt!(key, 256);
         let encrypted = mc.encrypt_str_to_base64(token);
         fs::write(
-            PathBuf::from("~/.spm.token.encrypted")
-                .canonicalize()
-                .unwrap_or("/root/.spm.token.encrypted".into()),
+            dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted"),
             encrypted,
         )?;
         Ok(())
@@ -22,9 +20,7 @@ impl Security {
     pub fn read_encrypted_token(key: &str) -> std::io::Result<String> {
         let mc = new_magic_crypt!(key, 256);
         let encrypted = fs::read_to_string(
-            PathBuf::from("~/.spm.token.encrypted")
-                .canonicalize()
-                .unwrap_or("/root/.spm.token.encrypted".into()),
+            dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted"),
         );
 
         match encrypted {
@@ -70,9 +66,7 @@ impl Security {
 
     pub fn reset_token() {
         let tokenfile = PathBuf::from(
-            PathBuf::from("~/.spm.token.encrypted")
-                .canonicalize()
-                .unwrap_or("/root/.spm.token.encrypted".into()),
+            dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted"),
         )
         .canonicalize()
         .unwrap_or("/root/.spm.token.encrypted".into());
