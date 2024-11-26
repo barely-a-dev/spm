@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use nix::fcntl::{Flock, FlockArg};
 
 pub struct Lock {
-    file: File,
+    _file: File,
     path: PathBuf,
 }
 

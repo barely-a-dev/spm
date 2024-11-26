@@ -1,3 +1,4 @@
+use crate::conversion::detect_file_type;
 use crate::db::Cache;
 use crate::db::Database;
 use crate::handlers::*;
@@ -19,6 +20,7 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
+use crate::conversion::*;
 
 // Helper functions for varint encoding/decoding
 pub fn write_varint<W: Write>(writer: &mut W, mut value: u32) -> Result<(), Box<dyn Error>> {
@@ -607,6 +609,15 @@ pub fn get_matches(
                 }
             }
         }
+    } else if let Some(mut args) = matches.get_many::<String>("convert-file") {
+        let input_file = args.next().expect("Input file argument required");
+        let output_file = args.next().expect("Output file argument required");
+
+        if let Err(e) = convert(input_file, output_file) {
+            eprintln!("Failed to convert file: {}", e);
+            process::exit(1);
+        }
+        println!("File converted successfully");
     } else {
         println!("Use -h or --help for usage information.");
     }
@@ -657,6 +668,24 @@ fn download(
 
     let content = response.bytes()?;
     file.write_all(&content)?;
+    Ok(())
+}
+
+fn convert(input: &str, output: &str) -> Result<(), Box<dyn Error>> {
+    match detect_file_type(input)? {
+        Some(file_type) => match file_type.as_str() {
+            "deb" => convert_deb_to_spm(Path::new(input), Path::new(output))?,
+            "rpm" =>
+            /*convert_rpm_to_spm(Path::new(input), Path::new(output))?*/
+            {
+                println!("RPM conversion is not supported at this time.");
+            }
+            "tar.gz" => convert_targz_to_spm(Path::new(input), Path::new(output))?,
+            "zip" => convert_zip_to_spm(Path::new(input), Path::new(output))?,
+            _ => return Err(format!("Unsupported file type: {}", file_type).into()),
+        },
+        None => return Err("Unable to detect file type".into()),
+    }
     Ok(())
 }
 

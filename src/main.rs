@@ -1,3 +1,4 @@
+mod conversion;
 mod db;
 mod handlers;
 mod helpers;
@@ -10,13 +11,13 @@ use crate::lock::Lock;
 use clap::{Arg, ArgAction, Command as ClapCommand};
 use db::Cache;
 use package::Package;
+use security::Security;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::process::exit;
 use std::{error::Error, path::PathBuf, process};
-use security::Security;
 
 #[derive(Deserialize)]
 struct PackageConfig {
@@ -66,10 +67,12 @@ impl Config {
     fn update(&mut self) {
         if let Some(token) = self.get_github_token_dep() {
             _ = self.settings.remove("github_token");
-            match self.save()
-            {
+            match self.save() {
                 Ok(_) => {}
-                Err(e) => {eprintln!("Failed to save new config file without token: {e}. Please run the program as root."); exit(1)}
+                Err(e) => {
+                    eprintln!("Failed to save new config file without token: {e}. Please run the program as root.");
+                    exit(1)
+                }
             }
             println!("The program was recently updated to store GH tokens in a more secure manner. You must now set a password for your token.");
             let password = rpassword::prompt_password("Create your password: ").expect("Failed to read token password, aborting. Your GH token was removed from the configuration");
@@ -97,24 +100,29 @@ impl Config {
         self.get("github_token")
     }
 
-    pub fn get_github_token(&self) -> Option<String>
-    {
-        for i in 0..3
-        {
-            if let Some(token) = Self::get_token_internal(3 - i)
-            {
-                return Some(token)
+    pub fn get_github_token(&self) -> Option<String> {
+        for i in 0..3 {
+            if let Some(token) = Self::get_token_internal(3 - i) {
+                return Some(token);
             }
         }
         None
     }
-    pub fn get_token_internal(attempts_remaining: u8) -> Option<String>
-    {
-        let password = rpassword::prompt_password("Enter your token password: ").expect("Failed to read password, aborting.");
-        match Security::read_encrypted_token(&password)
-        {
-            Ok(s) => {println!("Valid token found"); Some(s)},
-            Err(e) => {eprintln!("Failed to read encrypted token: {e}. {} attempts remaining.", attempts_remaining - 1); None}
+    pub fn get_token_internal(attempts_remaining: u8) -> Option<String> {
+        let password = rpassword::prompt_password("Enter your token password: ")
+            .expect("Failed to read password, aborting.");
+        match Security::read_encrypted_token(&password) {
+            Ok(s) => {
+                println!("Valid token found");
+                Some(s)
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to read encrypted token: {e}. {} attempts remaining.",
+                    attempts_remaining - 1
+                );
+                None
+            }
         }
     }
 }
@@ -305,6 +313,14 @@ fn main() {
                 .help("Use this version during package creation instead of asking for it or using the ver in the filename")
                 .num_args(1)
                 .value_name("VERSION")
+        )
+        .arg(
+            Arg::new("convert-file")
+                .short('m')
+                .long("convert")
+                .help("Convert another package manager's package file to an SPM package")
+                .num_args(2)
+                .value_names(["IN_FILE", "OUT_FILE"])
         )
         .arg(
             Arg::new("reset-token")
