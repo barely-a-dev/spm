@@ -11,7 +11,9 @@ impl Security {
         let mc = new_magic_crypt!(key, 256);
         let encrypted = mc.encrypt_str_to_base64(token);
         fs::write(
-            dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted"),
+            dirs::home_dir()
+                .unwrap_or("/root".into())
+                .join(".spm.token.encrypted"),
             encrypted,
         )?;
         Ok(())
@@ -20,7 +22,9 @@ impl Security {
     pub fn read_encrypted_token(key: &str) -> std::io::Result<String> {
         let mc = new_magic_crypt!(key, 256);
         let encrypted = fs::read_to_string(
-            dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted"),
+            dirs::home_dir()
+                .unwrap_or("/root".into())
+                .join(".spm.token.encrypted"),
         );
 
         match encrypted {
@@ -64,17 +68,36 @@ impl Security {
         }
     }
 
-    pub fn reset_token() {
+    pub fn reset_token() -> Result<(), Box<dyn std::error::Error>> {
         let tokenfile = PathBuf::from(
-            dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted"),
+            dirs::home_dir()
+                .unwrap_or("/root".into())
+                .join(".spm.token.encrypted"),
         )
         .canonicalize()
         .unwrap_or("/root/.spm.token.encrypted".into());
 
-        fs::remove_file(tokenfile).expect("Failed to remove existing token file.");
-        let password = rpassword::prompt_password("Create your password: ").expect("Failed to read token password, aborting. Your GH token was removed from the configuration");
-        let token =
-            rpassword::prompt_password("Enter your token: ").expect("Failed to read token.");
-        Security::encrypt_and_save_token(token, &password).expect("Failed to save token");
+        // Only try to remove the file if it exists
+        if tokenfile.exists() {
+            fs::remove_file(&tokenfile)?;
+        }
+
+        let token = rpassword::prompt_password("Enter your token: ")?;
+        let token = token.trim().to_string();
+
+        match helpers::validate_token(&token) {
+            Ok(_) => {
+                let password = rpassword::prompt_password("Create your password: ")?;
+                Security::encrypt_and_save_token(token, &password)?;
+                Ok(())
+            }
+            Err(e) => {
+                println!("Invalid token: {}", e);
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid token format",
+                )))
+            }
+        }
     }
 }

@@ -121,7 +121,7 @@ pub fn get_matches(
         }
     } else if matches.get_flag("reset-token") {
         require_root("resetting your token");
-        Security::reset_token();
+        Security::reset_token().expect("Failed to reset token");
     } else if let Some(mut files) = matches.get_many::<String>("install-patch") {
         require_root("installing patches");
         let dir = files.next().expect("Directory argument required");
