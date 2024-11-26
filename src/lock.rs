@@ -28,7 +28,7 @@ impl Lock {
                 Ok(_) => {
                     write!(file, "{}", std::process::id())?;
                     file.sync_all()?;
-                    return Ok(Lock { file, path: lockfile });
+                    return Ok(Lock { _file, path: lockfile });
                 }
                 Err((_, nix::errno::Errno::EAGAIN)) => {
                     if start.elapsed() > timeout {
