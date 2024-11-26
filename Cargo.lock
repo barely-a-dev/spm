@@ -827,6 +827,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1233,7 +1243,7 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "spm"
-version = "2.6.20"
+version = "2.8.20"
 dependencies = [
  "anyhow",
  "base64",
@@ -1243,6 +1253,7 @@ dependencies = [
  "indicatif",
  "libc",
  "nix",
+ "num_cpus",
  "reqwest",
  "rpassword",
  "serde",

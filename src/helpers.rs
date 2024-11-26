@@ -4,7 +4,9 @@ use crate::handlers::*;
 use crate::lock::Lock;
 use crate::patch::Patch;
 use crate::Config;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
+use std::io::stdin;
 use std::io::Read;
 use std::io::Write;
 use std::time::Duration;
@@ -186,8 +188,131 @@ pub fn get_matches(
         let output_file = args.next().expect("Output file argument required");
         let allow_large = matches.get_flag("allow-large");
 
-        if let Err(e) = handle_package_file(input_file, output_file, allow_large, false) {
+        if let Err(e) = handle_package_file(
+            input_file,
+            output_file,
+            allow_large,
+            false,
+            matches.get_flag("use-def-ver"),
+        ) {
             eprintln!("Failed to package file: {}", e);
+            process::exit(1);
+        }
+    } else if let Some(mut args) = matches.get_many::<String>("mass-package") {
+        let input_dir = args.next().expect("Input directory argument required");
+        let output_dir = args.next().expect("Output directory argument required");
+        let allow_large = matches.get_flag("allow-large");
+        let def = matches.get_flag("use-def-ver");
+
+        // Create output directory if it doesn't exist
+        if let Err(e) = fs::create_dir_all(output_dir) {
+            eprintln!("Failed to create output directory: {}", e);
+            process::exit(1);
+        }
+
+        println!("Processing files from {} to {}", input_dir, output_dir);
+
+        // Collect all files
+        let files: Vec<PathBuf> = walkdir::WalkDir::new(input_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .map(|entry| entry.path().to_path_buf())
+            .collect();
+
+        let total_count = files.len();
+        println!("Found {} files to process", total_count);
+
+        // Create main progress bar
+        let pb = ProgressBar::new(total_count as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)\n{wide_msg}")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+
+        // Create atomic counter for successful operations
+        let success_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let pb = std::sync::Arc::new(pb);
+
+        // Determine number of threads
+        let num_threads = num_cpus::get().max(1);
+        let chunk_size = (files.len() + num_threads - 1) / num_threads;
+
+        // Process files in parallel
+        let results: Vec<_> = files
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let pb = pb.clone();
+                let output_dir = output_dir.to_string();
+                let chunk = chunk.to_vec();
+                let success_count = success_count.clone();
+                let allow_large = allow_large;
+                let def = def;
+
+                std::thread::spawn(move || {
+                    for file_path in chunk {
+                        let input_file = file_path.to_string_lossy().to_string();
+                        let file_name = file_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+
+                        let output_file = Path::new(&output_dir)
+                            .join(format!("{}.spm", file_name))
+                            .to_string_lossy()
+                            .to_string();
+
+                        pb.set_message(format!("Processing: {}", file_name));
+
+                        match handle_package_file_atomic(
+                            &input_file,
+                            &output_file,
+                            allow_large,
+                            false,
+                            def,
+                        ) {
+                            Ok(_) => {
+                                success_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            Err(e) => {
+                                eprintln!("\nFailed to package {}: {}", file_name, e);
+                                if !matches!(
+                                    e.to_string().as_str(),
+                                    "File is larger than 100MB. Use -L to package anyway"
+                                ) {
+                                    println!("Press Enter to continue or Ctrl+C to abort...");
+                                    let mut buf = String::new();
+                                    if stdin().read_line(&mut buf).is_err() {
+                                        eprintln!("Failed to read input, aborting...");
+                                        process::exit(1);
+                                    }
+                                }
+                            }
+                        }
+
+                        pb.inc(1);
+                    }
+                })
+            })
+            .collect();
+
+        // Wait for all threads to complete
+        for handle in results {
+            handle.join().unwrap();
+        }
+
+        let final_success_count = success_count.load(std::sync::atomic::Ordering::Relaxed);
+
+        pb.finish_and_clear();
+        println!(
+            "Complete: {}/{} files packaged successfully",
+            final_success_count, total_count
+        );
+
+        if final_success_count != total_count {
             process::exit(1);
         }
     } else if let Some(mut args) = matches.get_many::<String>("verify-package") {
@@ -498,7 +623,9 @@ fn download_and_install_package(
     let url = if database.src().contains("github.com") {
         format!(
             "https://raw.githubusercontent.com/{}/{}/main/{}",
-            owner, repo, package_name.trim_end_matches(".spm")
+            owner,
+            repo,
+            package_name.trim_end_matches(".spm")
         )
     } else {
         format!("{}/{}", database.src(), package_name)

@@ -100,7 +100,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("2.6.20")
+        .version("2.8.20")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -246,6 +246,20 @@ fn main() {
                 .help("List installed packages and their files. Optionally specify a package name")
                 .num_args(0..=1)
                 .value_name("PACKAGE"),
+        )
+        .arg(
+            Arg::new("mass-package")
+                .short('m')
+                .long("mass-pack")
+                .help("Package every file in IN_DIR into its own package, placing the package files in ")
+                .num_args(2)
+                .value_names(["IN_DIR", "OUT_DIR"])
+        )
+        .arg(
+            Arg::new("use-def-ver")
+                .long("default")
+                .help("Use the default version of 1.0.0 during package creation from file with -m/-f")
+                .action(ArgAction::SetTrue)
         )
         // .arg(
         //     Arg::new("do-nothing")
