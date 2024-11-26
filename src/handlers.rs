@@ -3,6 +3,7 @@ use crate::db::Cache;
 use crate::helpers;
 use crate::helpers::parse_name_and_version;
 use crate::lock::Lock;
+use crate::security::Security;
 use crate::Config;
 use crate::Package;
 use crate::PackageConfig;
@@ -24,7 +25,7 @@ pub fn handle_package_file(
     output_file: &str,
     allow_large: bool,
     allow_empty_ver: bool,
-    use_def_ver: bool,
+    ver: Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let file_path = Path::new(input_file);
     let mut package = Package::new();
@@ -72,7 +73,7 @@ pub fn handle_package_file(
 
     // Use just the file name as the relative path
     let relative_path = PathBuf::from(file_path.file_name().ok_or("Invalid file name")?);
-    
+
     // Check if file requires root permissions
     if file_path.starts_with("/usr/bin")
         || file_path.starts_with("/usr/sbin")
@@ -95,24 +96,19 @@ pub fn handle_package_file(
     // Name is just the filename for single-file packages
     let name = relative_path.display().to_string();
     let (parsed_name, parsed_version) = parse_name_and_version(&name);
-    
+
     // Always set a name - use the parsed name or the full filename if parsing failed
     package.name = parsed_name;
 
     // Handle versioning
-    if use_def_ver {
-        package.version = "1.0.0".to_string();
+    if ver.is_some() {
+        package.version = ver.unwrap_or("0.0.0".to_string());
     } else if !allow_empty_ver {
         if let Some(version) = parsed_version {
             package.version = version;
         } else {
             let (_, versionp) = parse_name_and_version(output_file);
-            package.version = versionp.unwrap_or_else(|| {
-                println!("Enter package version (e.g. 1.0.0):");
-                let mut version = String::new();
-                std::io::stdin().read_line(&mut version).unwrap_or_default();
-                version.trim().to_string()
-            });
+            package.version = versionp.unwrap_or_else(|| "1.0.0".to_string());
         }
     }
 
@@ -134,7 +130,7 @@ pub fn handle_package_file_atomic(
     output_file: &str,
     allow_large: bool,
     allow_empty_ver: bool,
-    use_def_ver: bool,
+    ver: &Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let file_path = Path::new(input_file);
     let mut package = Package::new();
@@ -157,7 +153,7 @@ pub fn handle_package_file_atomic(
 
     // Use just the file name as the relative path
     let relative_path = PathBuf::from(file_path.file_name().ok_or("Invalid file name")?);
-    
+
     // Check if file requires root permissions
     if file_path.starts_with("/usr/bin")
         || file_path.starts_with("/usr/sbin")
@@ -178,7 +174,7 @@ pub fn handle_package_file_atomic(
     // Name is just the filename for single-file packages
     let name = relative_path.display().to_string();
     let (parsed_name, parsed_version) = parse_name_and_version(&name);
-    
+
     // Always set a name - use the parsed name or the full filename if parsing failed
     package.name = if parsed_name.is_empty() {
         name.clone()
@@ -187,8 +183,10 @@ pub fn handle_package_file_atomic(
     };
 
     // Handle versioning
-    if use_def_ver {
+    if ver.is_none() {
         package.version = "1.0.0".to_string();
+    } else if ver.is_some() {
+        package.version = ver.clone().unwrap_or("0.0.0".to_string());
     } else if !allow_empty_ver {
         if let Some(version) = parsed_version {
             package.version = version;
@@ -206,6 +204,7 @@ pub fn handle_package_dir(
     package_dir: &str,
     output_file: &str,
     allow_large: bool,
+    ver: Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let dir_path = Path::new(package_dir);
     let mut package = Package::new();
@@ -389,6 +388,8 @@ pub fn handle_package_dir(
     }
     if let Some(version) = config.version {
         package.version = version;
+    } else if let Some(version) = ver {
+        package.version = version;
     } else {
         println!("Enter package version (e.g. 1.0.0):");
         let mut version = String::new();
@@ -461,18 +462,17 @@ pub fn handle_publish_package(
     // First verify the package is valid
     let _package = Package::load_package(Path::new(package_path)).expect("Invalid package");
 
-    let token = match config.get_github_token() {
-        Some(token) => token,
-        None => {
-            println!("GitHub personal access token required for publishing.");
-            println!("Create one at https://github.com/settings/tokens");
-            println!("Token must have 'repo' scope permissions.");
-            println!("This token will be saved for future use.");
-            let token = rpassword::prompt_password("Enter token: ")?;
-            let token = token.trim().to_string();
-            config.set_github_token(token.clone())?;
-            token
+    let tokenfile = PathBuf::from("~/.spm.token.encrypted")
+        .canonicalize()
+        .unwrap_or("/root/.spm.token.encrypted".into());
+
+    let token = if tokenfile.exists() {
+        match config.get_github_token() {
+            Some(token) => token,
+            None => helpers::get_token(),
         }
+    } else {
+        helpers::get_token()
     };
 
     let client = reqwest::blocking::Client::new();
@@ -493,7 +493,8 @@ pub fn handle_publish_package(
         .send()?;
 
     if !user_response.status().is_success() {
-        return Err("Unable to get user information".into());
+        println!("Token: {}", token);
+        return Err("Unable to get user information. Try to reset your token using spm --rtok".into());
     }
 
     let user_info: Value = user_response.json()?;
@@ -792,7 +793,11 @@ pub fn handle_remove_package(
             println!("This token will be saved for future use.");
             let token = rpassword::prompt_password("Enter token: ")?;
             let token = token.trim().to_string();
-            config.set_github_token(token.clone())?;
+
+            let password = rpassword::prompt_password("Create your password: ")
+                .expect("Failed to read password, aborting. Your GH token was not stored.");
+
+            Security::encrypt_and_save_token(token.clone(), &password)?;
             token
         }
     };
@@ -1249,6 +1254,12 @@ pub fn handle_dev_pub(
         package_name.as_ref().unwrap_or(&"unnamed".to_string())
     ));
 
+    if package_file.exists()
+    {
+        println!("Package file exists, erasing...");
+        fs::remove_file(&package_file).expect("Failed to erase existing package file. Result may be corrupt or creation may fail.");
+    }
+
     if let Some(output) = output_file {
         if output.exists() {
             if let Ok((uid, gid)) = crate::helpers::get_real_user() {
@@ -1269,8 +1280,8 @@ pub fn handle_dev_pub(
                 output.to_str().unwrap(),
                 package_file.to_str().unwrap(),
                 true, // allow large in case
-                true, // Sets the version below, so this is fine.
-                false,
+                true, // Sets the version below, so this and | is fine.
+                None, //                                                <
             )?;
 
             let mut pack = Package::load_package(&package_file)

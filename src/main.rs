@@ -4,6 +4,7 @@ mod helpers;
 mod lock;
 mod package;
 mod patch;
+mod security;
 
 use crate::lock::Lock;
 use clap::{Arg, ArgAction, Command as ClapCommand};
@@ -11,9 +12,11 @@ use db::Cache;
 use package::Package;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Write;
-use std::{error::Error, fs, path::PathBuf, process};
+use std::process::exit;
+use std::{error::Error, path::PathBuf, process};
+use security::Security;
 
 #[derive(Deserialize)]
 struct PackageConfig {
@@ -49,14 +52,29 @@ impl Config {
                 }
             }
         }
-
-        Ok(Config { settings, path })
+        let mut new = Config { settings, path };
+        new.update();
+        Ok(new)
     }
 
     fn set(&mut self, key: &str, value: String) -> Result<(), Box<dyn Error>> {
         self.settings.insert(key.to_string(), value);
         self.save()?;
         Ok(())
+    }
+
+    fn update(&mut self) {
+        if let Some(token) = self.get_github_token_dep() {
+            _ = self.settings.remove("github_token");
+            match self.save()
+            {
+                Ok(_) => {}
+                Err(e) => {eprintln!("Failed to save new config file without token: {e}. Please run the program as root."); exit(1)}
+            }
+            println!("The program was recently updated to store GH tokens in a more secure manner. You must now set a password for your token.");
+            let password = rpassword::prompt_password("Create your password: ").expect("Failed to read token password, aborting. Your GH token was removed from the configuration");
+            Security::encrypt_and_save_token(token, &password).expect("Failed to save token");
+        }
     }
 
     fn save(&self) -> Result<(), Box<dyn Error>> {
@@ -74,13 +92,30 @@ impl Config {
     fn get(&self, key: &str) -> Option<String> {
         self.settings.get(key).clone().cloned()
     }
-    fn set_github_token(&mut self, token: String) -> Result<(), Box<dyn Error>> {
-        // TODO:  validate the token format here
-        self.set("github_token", token)
+
+    fn get_github_token_dep(&self) -> Option<String> {
+        self.get("github_token")
     }
 
-    fn get_github_token(&self) -> Option<String> {
-        self.get("github_token")
+    pub fn get_github_token(&self) -> Option<String>
+    {
+        for i in 0..3
+        {
+            if let Some(token) = Self::get_token_internal(3 - i)
+            {
+                return Some(token)
+            }
+        }
+        None
+    }
+    pub fn get_token_internal(attempts_remaining: u8) -> Option<String>
+    {
+        let password = rpassword::prompt_password("Enter your token password: ").expect("Failed to read password, aborting.");
+        match Security::read_encrypted_token(&password)
+        {
+            Ok(s) => {println!("Valid token"); Some(s)},
+            Err(e) => {eprintln!("Failed to read encrypted token: {e}. {} attempts remaining.", attempts_remaining - 1); None}
+        }
     }
 }
 
@@ -251,14 +286,22 @@ fn main() {
             Arg::new("mass-package")
                 .short('m')
                 .long("mass-pack")
-                .help("Package every file in IN_DIR into its own package, placing the package files in ")
+                .help("Package every file in IN_DIR into its own package, placing the package files in OUT_DIR")
                 .num_args(2)
                 .value_names(["IN_DIR", "OUT_DIR"])
         )
         .arg(
-            Arg::new("use-def-ver")
-                .long("default")
-                .help("Use the default version of 1.0.0 during package creation from file with -m/-f")
+            Arg::new("version")
+                .short('1')
+                .long("ver")
+                .help("Use this version during package creation instead of asking for it or using the ver in the filename")
+                .num_args(1)
+                .value_name("VERSION")
+        )
+        .arg(
+            Arg::new("reset-token")
+                .long("rtok")
+                .help("Reset your token")
                 .action(ArgAction::SetTrue)
         )
         // .arg(

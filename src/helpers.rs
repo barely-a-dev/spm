@@ -4,12 +4,13 @@ use crate::handlers::*;
 use crate::lock::Lock;
 use crate::patch::Patch;
 use crate::Config;
+use anyhow;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
 use std::io::stdin;
 use std::io::Read;
 use std::io::Write;
-use std::time::Duration;
+//use std::time::Duration;
 use std::{
     error::Error,
     fs,
@@ -17,6 +18,7 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
+use crate::Security;
 
 // Helper functions for varint encoding/decoding
 pub fn write_varint<W: Write>(writer: &mut W, mut value: u32) -> Result<(), Box<dyn Error>> {
@@ -106,6 +108,7 @@ pub fn get_matches(
     database: &mut Database,
     cache: &mut Cache,
 ) {
+    let ver = matches.get_one::<String>("version").cloned();
     if matches.contains_id("dev-pub") {
         require_root("publishing from source");
         let dir = matches
@@ -116,6 +119,9 @@ pub fn get_matches(
             eprintln!("Failed to publish: {}", e);
             process::exit(1);
         }
+    } else if matches.get_flag("reset-token") {
+        require_root("resetting your token");
+        Security::reset_token();
     } else if let Some(mut files) = matches.get_many::<String>("install-patch") {
         require_root("installing patches");
         let dir = files.next().expect("Directory argument required");
@@ -179,7 +185,7 @@ pub fn get_matches(
         let output = args.next().expect("Output file argument required");
         let allow_large = matches.get_flag("allow-large");
 
-        if let Err(e) = handle_package_dir(dir, output, allow_large) {
+        if let Err(e) = handle_package_dir(dir, output, allow_large, ver) {
             eprintln!("Failed to create package: {}", e);
             process::exit(1);
         }
@@ -188,13 +194,7 @@ pub fn get_matches(
         let output_file = args.next().expect("Output file argument required");
         let allow_large = matches.get_flag("allow-large");
 
-        if let Err(e) = handle_package_file(
-            input_file,
-            output_file,
-            allow_large,
-            false,
-            matches.get_flag("use-def-ver"),
-        ) {
+        if let Err(e) = handle_package_file(input_file, output_file, allow_large, false, ver) {
             eprintln!("Failed to package file: {}", e);
             process::exit(1);
         }
@@ -202,7 +202,6 @@ pub fn get_matches(
         let input_dir = args.next().expect("Input directory argument required");
         let output_dir = args.next().expect("Output directory argument required");
         let allow_large = matches.get_flag("allow-large");
-        let def = matches.get_flag("use-def-ver");
 
         // Create output directory if it doesn't exist
         if let Err(e) = fs::create_dir_all(output_dir) {
@@ -250,7 +249,7 @@ pub fn get_matches(
                 let chunk = chunk.to_vec();
                 let success_count = success_count.clone();
                 let allow_large = allow_large;
-                let def = def;
+                let ver = ver.clone();
 
                 std::thread::spawn(move || {
                     for file_path in chunk {
@@ -272,7 +271,7 @@ pub fn get_matches(
                             &output_file,
                             allow_large,
                             false,
-                            def,
+                            &ver,
                         ) {
                             Ok(_) => {
                                 success_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -563,13 +562,13 @@ pub fn get_matches(
             eprintln!("Failed to uninstall package: {}", e);
             process::exit(1);
         }
-    } else if matches.contains_id("do-nothing") {
-        let def = &"5000".to_string();
-        let len = matches.get_one::<String>("do-nothing").unwrap_or(def);
-        std::thread::sleep(Duration::from_millis(len.parse::<u64>().unwrap_or(5000)));
-    } else if matches.contains_id("lock-test") {
-        let _lock = Lock::new("db").expect("Failed to lock");
-    } else if matches.contains_id("list") {
+        // } else if matches.contains_id("do-nothing") {
+        //     let def = &"5000".to_string();
+        //     let len = matches.get_one::<String>("do-nothing").unwrap_or(def);
+        //     std::thread::sleep(Duration::from_millis(len.parse::<u64>().unwrap_or(5000)));
+        // } else if matches.get_flag("lock-test") {
+        //     let _lock = Lock::new("db").expect("Failed to lock");
+        // } else if matches.contains_id("list") {
         match matches.get_one::<String>("list") {
             Some(package) => {
                 // List files for specific package
@@ -660,3 +659,47 @@ fn download_and_install_package(
     println!("Package {} installed successfully", package_name);
     Ok(())
 }
+
+pub fn get_token() -> String {
+    println!("GitHub personal access token required for publishing.");
+    println!("Create one at https://github.com/settings/tokens");
+    println!("Token must have 'repo' scope permissions.");
+    println!("This token will be saved for future use.");
+    let token = rpassword::prompt_password("Enter token: ").expect("Failed to read token");
+    let token = token.trim().to_string();
+
+    let password = rpassword::prompt_password("Create your password: ")
+        .expect("Failed to read password, aborting. Your GH token was not stored");
+
+    Security::encrypt_and_save_token(token.clone(), &password).expect("Failed to save token");
+    token
+}
+
+pub fn validate_token(token: &String) -> anyhow::Result<&str> {
+    // Check if empty or too short
+    if token.is_empty() || token.len() < 40 {
+        return Err(anyhow::Error::msg("Token is too short"));
+    }
+
+    // Check prefix
+    if !token.starts_with("github_pat_") {
+        return Err(anyhow::Error::msg("Token must start with 'github_pat_'"));
+    }
+
+    // Check for valid characters (GitHub tokens use base58)
+    let valid_chars = token.chars().all(|c| {
+        c.is_ascii_alphanumeric() || c == '_'
+    });
+
+    if !valid_chars {
+        return Err(anyhow::Error::msg("Token contains invalid characters"));
+    }
+
+    // Check length (GitHub fine-grained PATs are typically longer than 40 chars)
+    if token.len() < 40 {
+        return Err(anyhow::Error::msg("Token length is invalid"));
+    }
+
+    Ok("Valid token")
+}
+
