@@ -1197,7 +1197,7 @@ pub fn handle_dev_pub(dir: PathBuf, config: &mut Config, database: &db::Database
 pub fn handle_uninstall_package(package_name: &str, cache: &mut Cache) -> Result<(), Box<dyn Error>> {
     let _lock = Lock::new("cache")?;
     let _bin_lock = Lock::new("bin");
-    if let Some(installed_files) = cache.remove(package_name) {
+    if let Some((installed_files, _)) = cache.remove(package_name) {
         println!("Uninstalling package {}...", package_name);
         
         for file in installed_files {

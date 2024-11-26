@@ -452,7 +452,7 @@ impl Package {
         }
     
         // Update cache with installed files
-        cache.add((self.name.clone(), installed_files));
+        cache.add(self.name.clone(), (installed_files, self.version.clone()));
         cache.save()?;
     
         Ok(())

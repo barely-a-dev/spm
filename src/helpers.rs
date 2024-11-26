@@ -336,7 +336,7 @@ pub fn get_matches(
         }
 
         println!("Checking for updates...");
-        let updates = database.check_updates();
+        let updates = database.check_updates(cache);
         if updates.is_empty() {
             println!("All packages are up to date!");
             return;
@@ -344,12 +344,14 @@ pub fn get_matches(
 
         let client = reqwest::blocking::Client::new();
 
-        if let Some(packages) = matches.get_many::<String>("update") {
+        // Change this section to check if there are any values provided
+        if let Some(packages) = matches.get_many::<String>("update").filter(|p| p.len() > 0) {
             // Update specific packages
             let packages: Vec<String> = packages.map(|s| s.to_string()).collect();
             let mut updated = false;
 
             for (name, current, latest) in &updates {
+                println!("{:#?}", updates);
                 let package_name = name.trim_end_matches(".spm");
                 if packages.contains(&package_name.to_string()) {
                     println!("Updating {}: {} -> {}", package_name, current, latest);
@@ -445,7 +447,7 @@ pub fn get_matches(
         match matches.get_one::<String>("list") {
             Some(package) => {
                 // List files for specific package
-                if let Some(files) = cache.get_installed_files(package.to_string()) {
+                if let Some((files, _)) = cache.get_installed_files(package.to_string()) {
                     println!("Files installed by package {}:", package);
                     for file in files {
                         // Now we iterate over the Vec<String> inside the Some()
@@ -465,7 +467,7 @@ pub fn get_matches(
                     println!("Installed packages:");
                     for package in installed {
                         println!("\n{}:", package);
-                        if let Some(files) = cache.get_installed_files(package.clone()) {
+                        if let Some((files, _)) = cache.get_installed_files(package.clone()) {
                             for file in files {
                                 println!("  {}", file);
                             }
@@ -495,7 +497,7 @@ fn download_and_install_package(
     let url = if database.src().contains("github.com") {
         format!(
             "https://raw.githubusercontent.com/{}/{}/main/{}",
-            owner, repo, package_name
+            owner, repo, package_name.trim_end_matches(".spm")
         )
     } else {
         format!("{}/{}", database.src(), package_name)

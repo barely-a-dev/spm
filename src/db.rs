@@ -1,3 +1,4 @@
+use crate::lock::Lock;
 use base64::Engine;
 use reqwest;
 use serde_json::Value;
@@ -6,7 +7,6 @@ use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-use crate::lock::Lock;
 
 pub struct Database {
     src: String,
@@ -143,40 +143,52 @@ impl Database {
     pub fn exact_search(&self, query: String) -> Option<String> {
         self.entries.get(&query).map(|_| query)
     }
-    // TODO: Fix? I can't tell if it's broken or not.
-    pub fn check_updates(&self) -> Vec<(String, String, String)> {
+    pub fn check_updates(&self, cache: &Cache) -> Vec<(String, String, String)> {
         // Returns (name, current_version, available_version)
         let mut updates = Vec::new();
         let client = reqwest::blocking::Client::new();
 
-        for (package, current_version) in &self.entries {
-            let parts: Vec<&str> = self.src.split('/').collect();
-            let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
+        for (package, _) in &self.entries {
+            let current_version = cache.get_version(package.to_string());
+            let b = current_version.parse::<bool>();
+            if b.is_err() || b.unwrap() {
+                let parts: Vec<&str> = self.src.split('/').collect();
+                //println!("DEBUG: {:#?}", parts);
+                let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
 
-            // Get version from .ver file
-            let ver_url = format!(
-                "https://api.github.com/repos/{}/{}/contents/{}.ver",
-                owner, repo, package
-            );
+                // Get version from .ver file
+                let ver_url = format!(
+                    "https://api.github.com/repos/{}/{}/contents/{}.ver",
+                    owner, repo, package
+                );
 
-            if let Ok(ver_response) = client
-                .get(&ver_url)
-                .header("User-Agent", "spm-client")
-                .send()
-            {
-                if let Ok(ver_content) = ver_response.json::<Value>() {
-                    if let Some(content) = ver_content["content"].as_str() {
-                        if let Ok(decoded) = base64::engine::general_purpose::STANDARD
-                            .decode(content.replace('\n', ""))
-                        {
-                            if let Ok(latest_version) = String::from_utf8(decoded) {
-                                let latest_version = latest_version.trim();
-                                if latest_version != current_version {
-                                    updates.push((
-                                        format!("{}.spm", package), // Add .spm extension
-                                        current_version.clone(),
-                                        latest_version.to_string(),
-                                    ));
+                //println!("DEBUG: {}", ver_url);
+
+                if let Ok(ver_response) = client
+                    .get(&ver_url)
+                    .header("User-Agent", "spm-client")
+                    .send()
+                {
+                    //println!("DEBUG: ver_response success");
+                    if let Ok(ver_content) = ver_response.json::<Value>() {
+                        //println!("DEBUG: ver_cont success");
+                        if let Some(content) = ver_content["content"].as_str() {
+                            //println!("DEBUG: got cont");
+                            if let Ok(decoded) = base64::engine::general_purpose::STANDARD
+                                .decode(content.replace('\n', ""))
+                            {
+                                //println!("DEBUG: decoded");
+                                if let Ok(latest_version) = String::from_utf8(decoded) {
+                                    //println!("DEBUG: got ver full");
+                                    let latest_version = latest_version.trim();
+                                    if latest_version != current_version {
+                                        println!("DEBUG: {}!={}", latest_version, current_version);
+                                        updates.push((
+                                            format!("{}.spm", package), // Add .spm extension
+                                            current_version.clone(),
+                                            latest_version.to_string(),
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -192,7 +204,7 @@ impl Database {
 }
 
 pub struct Cache {
-    installed_packages: HashMap<String, Vec<String>>, // Hashmap key is pkg names, Vec is installed files
+    installed_packages: HashMap<String, (Vec<String>, String)>, // Hashmap key is pkg names, Vec is installed files, String is version
 }
 // TODO: make it store not just installed files and remove them, but also removed files and their contents, emptied files and theirs, files before patches to restore them
 impl Cache {
@@ -206,6 +218,18 @@ impl Cache {
             if let Ok(contents) = fs::read_to_string(&path) {
                 for line in contents.lines() {
                     if let Some((package, files_str)) = line.split_once('=') {
+                        // TODO: disallow & in package names
+                        let package_i: Vec<&str> = package
+                            .split('&')
+                            .collect();
+                        let package = package_i
+                        .first()
+                        .expect("Failed to get package name")
+                        .to_string();
+                        let version = package_i
+                        .last()
+                        .expect("Failed to get package name")
+                        .to_string();
                         // Remove the brackets and split by commas
                         let files_str = files_str.trim_start_matches('[').trim_end_matches(']');
                         let files: Vec<String> = files_str
@@ -213,7 +237,9 @@ impl Cache {
                             .map(|s| s.trim().trim_matches('"').to_string())
                             .collect();
 
-                        cache.installed_packages.insert(package.to_string(), files);
+                        cache
+                            .installed_packages
+                            .insert(package.to_string(), (files, version));
                     }
                 }
             }
@@ -224,32 +250,42 @@ impl Cache {
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
         let _lock = Lock::new("cache")?;
         let path = PathBuf::from("/var/cache/spm/spm.cache");
-
         let mut file = File::create(&path)?;
 
-        for (package, files) in &self.installed_packages {
+        println!("{:#?}", self.installed_packages);
+
+        for (package, (files, version)) in &self.installed_packages {
             let files_str = files
                 .iter()
                 .map(|s| format!("\"{}\"", s))
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            writeln!(file, "{}=[{}]", package, files_str)?;
+            writeln!(file, "{}&{}=[{}]", package, version, files_str)?;
         }
         Ok(())
     }
 
-    pub fn add(&mut self, (package, files): (String, Vec<String>)) {
-        self.installed_packages.insert(package, files);
+    pub fn add(&mut self, package: String, (files, version): (Vec<String>, String)) {
+        self.installed_packages.insert(package, (files, version));
     }
 
-    pub fn get_installed_files(&self, pack: String) -> Option<Vec<String>> {
-        self.installed_packages
-            .get(&pack)
-            .cloned()
+    pub fn get_installed_files(&self, pack: String) -> Option<(Vec<String>, String)> {
+        self.installed_packages.get(&pack).cloned()
     }
 
-    pub fn remove(&mut self, package: &str) -> Option<Vec<String>> {
+    pub fn get_version(&self, pack: String) -> String {
+        // First try to find an exact match with any version
+        for (cached_name, (_, version)) in &self.installed_packages {
+            if cached_name.split('&').next().unwrap_or(cached_name) == pack {
+                return version.clone();
+            }
+        }
+        // Return default version if not found
+        "false".to_string()
+    }
+
+    pub fn remove(&mut self, package: &str) -> Option<(Vec<String>, String)> {
         self.installed_packages.remove(package)
     }
 
