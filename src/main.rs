@@ -113,7 +113,7 @@ impl Config {
         let password = rpassword::prompt_password("Enter your token password: ").expect("Failed to read password, aborting.");
         match Security::read_encrypted_token(&password)
         {
-            Ok(s) => {println!("Valid token"); Some(s)},
+            Ok(s) => {println!("Valid token found"); Some(s)},
             Err(e) => {eprintln!("Failed to read encrypted token: {e}. {} attempts remaining.", attempts_remaining - 1); None}
         }
     }
@@ -135,7 +135,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("2.10.21")
+        .version("2.11.21")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -226,6 +226,14 @@ fn main() {
                 .help("Install a package from the database or local file")
                 .num_args(1..)
                 .value_name("PACKAGE"),
+        )
+        .arg(
+            Arg::new("fetch")
+                .short('F')
+                .long("fetch")
+                .help("Fetch a package from the database")
+                .num_args(2)
+                .value_names(["PACKAGE_NAME", "OUTPUT_FILE"]),
         )
         .arg(
             Arg::new("update")

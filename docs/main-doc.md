@@ -150,8 +150,9 @@ pub fn apply(&self, dir_of_file: &str) -> Result<(), Box<dyn Error>>;
 | -f, --package-file | Package file | None | `spm -f input out.spm` |
 | -b, --publish | Publish package | None* | `spm -b pkg.spm` |
 | -p, --install-patch | Install patch | Root | `sudo spm -p /target patch.rpat` |
-| -q, --dev-pub | Auto-build & publish | Root* | `spm -q` |
-| -C, --config | Configure the program | Root | `spm -C net_enabled true` |
+| -q, --dev-pub | Auto-build & publish | Root* | `sudo spm -q` |
+| -C, --config | Configure the program | Root | `sudo spm -C net_enabled true` |
+| -F, --fetch | Fetch package from repo and store in output | None | `sudo spm -F package output` |
 
 *Requires GitHub token configuration
 **Requires GitHub token configuration if not using on a local file
@@ -171,7 +172,6 @@ This enables clean uninstallation and system state tracking.
 
 2. **Installation**
    - Regular database updates
-   - Verify package signatures
    - Review package contents before installation
 
 3. **Security**
@@ -228,7 +228,6 @@ Planned features by priority:
 - Medium priority:
   - Improved cache system allowing for more complete uninstallations
   - More descriptive and helpful error messages
-  - Security improvements
 - Low priority:
   - Dependency management
   - Package verification improvements

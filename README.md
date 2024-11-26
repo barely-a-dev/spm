@@ -99,8 +99,8 @@ spm -v patch.rpat
 
 SPM uses the following configuration files:
 - `~/.spm.conf` - Main configuration
-- `~/.spm.db` - Package database
-- `~/.spm.cache` - Installation cache
+- `/var/lib/spm/spm.db` - Package database
+- `/var/cache/spm/spm.cache` - Installation cache
 
 ### Package Configuration
 Create `pkg.toml` in your package directory:
@@ -116,8 +116,6 @@ files_to_empty = ["/var/log/service.log"]
 ## Security Notes
 
 - Package operations requiring system modifications need root privileges
-- GitHub tokens are stored in plaintext - use tokens with minimal necessary permissions
-- All packages are verified before installation
 - File permissions are preserved and enforced during installation
 
 ## License

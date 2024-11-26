@@ -11,6 +11,7 @@ use std::io::stdin;
 use std::io::Read;
 use std::io::Write;
 //use std::time::Duration;
+use crate::Security;
 use std::{
     error::Error,
     fs,
@@ -18,7 +19,6 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
-use crate::Security;
 
 // Helper functions for varint encoding/decoding
 pub fn write_varint<W: Write>(writer: &mut W, mut value: u32) -> Result<(), Box<dyn Error>> {
@@ -442,6 +442,12 @@ pub fn get_matches(
                 process::exit(1);
             }
         }
+    } else if let Some(mut a) = matches.get_many::<String>("fetch") {
+        let package: Option<&String> = a.next();
+        let output_dir: Option<&String> = a.next();
+        if let (Some(p), Some(o)) = (package, output_dir) {
+            download(&database, p, o, None).expect("Failed to download package.");
+        }
     } else if matches.contains_id("update") {
         require_root("installing updates");
         let _lock = Lock::new("db").expect("Failed to lock");
@@ -606,13 +612,18 @@ pub fn get_matches(
     }
 }
 
-// Helper function to download and install a package
-fn download_and_install_package(
-    package_name: &str,
+fn download(
     database: &Database,
-    cache: &mut Cache,
-    client: &reqwest::blocking::Client,
+    package_name: &str,
+    output_name: &str,
+    client_op: Option<&reqwest::blocking::Client>,
 ) -> Result<(), Box<dyn Error>> {
+    let client = if client_op.is_none() {
+        &reqwest::blocking::Client::new()
+    } else {
+        client_op.unwrap()
+    };
+
     let parts: Vec<&str> = database.src().split('/').collect();
     let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
 
@@ -638,15 +649,29 @@ fn download_and_install_package(
     }
 
     // Save to temporary file
-    let temp_path = format!("/tmp/{}", package_name);
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .mode(0o666)
-        .open(&temp_path)?;
+        .open(&output_name)?;
 
     let content = response.bytes()?;
     file.write_all(&content)?;
+    Ok(())
+}
+
+// Helper function to download and install a package
+fn download_and_install_package(
+    package_name: &str,
+    database: &Database,
+    cache: &mut Cache,
+    client: &reqwest::blocking::Client, // Note: kept for compatibility but unused
+) -> Result<(), Box<dyn Error>> {
+    // Create temporary file path
+    let temp_path = format!("/tmp/{}", package_name);
+
+    // Download the package using the download function
+    download(database, package_name, &temp_path, Some(client))?;
 
     // Install downloaded package
     handle_install_package(&temp_path, None, cache)?;
@@ -687,9 +712,7 @@ pub fn validate_token(token: &String) -> anyhow::Result<&str> {
     }
 
     // Check for valid characters (GitHub tokens use base58)
-    let valid_chars = token.chars().all(|c| {
-        c.is_ascii_alphanumeric() || c == '_'
-    });
+    let valid_chars = token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
 
     if !valid_chars {
         return Err(anyhow::Error::msg("Token contains invalid characters"));
@@ -702,4 +725,3 @@ pub fn validate_token(token: &String) -> anyhow::Result<&str> {
 
     Ok("Valid token")
 }
-
