@@ -182,7 +182,7 @@ impl Database {
                                     //println!("DEBUG: got ver full");
                                     let latest_version = latest_version.trim();
                                     if latest_version != current_version {
-                                        println!("DEBUG: {}!={}", latest_version, current_version);
+                                        //println!("DEBUG: {}!={}", latest_version, current_version);
                                         updates.push((
                                             format!("{}.spm", package), // Add .spm extension
                                             current_version.clone(),
@@ -252,7 +252,7 @@ impl Cache {
         let path = PathBuf::from("/var/cache/spm/spm.cache");
         let mut file = File::create(&path)?;
 
-        println!("{:#?}", self.installed_packages);
+        //println!("{:#?}", self.installed_packages);
 
         for (package, (files, version)) in &self.installed_packages {
             let files_str = files

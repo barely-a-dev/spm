@@ -348,6 +348,7 @@ pub fn get_matches(
         if let Some(packages) = matches.get_many::<String>("update").filter(|p| p.len() > 0) {
             // Update specific packages
             let packages: Vec<String> = packages.map(|s| s.to_string()).collect();
+            println!("pg: {:#?}", packages);
             let mut updated = false;
 
             for (name, current, latest) in &updates {
