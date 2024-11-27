@@ -8,8 +8,11 @@
 7. Data?
 */
 
+use crate::db::FileState;
+use crate::db::PackageState;
 use crate::helpers::{get_real_user, is_root, read_varint, write_varint};
 use crate::patch::Patch;
+use crate::Cache;
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::CString;
@@ -19,10 +22,9 @@ use std::os::unix::fs::chown;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use zstd::{decode_all, encode_all};
-use crate::Cache;
 
 const MAGIC: &[u8] = b"SPKG";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 
 //TODO: dependences, alternate package versions aside from most recent (do before dependencies), build scripts, pre/post install scripts, downgrade packages/choose specific versions, package groups
 pub struct Package {
@@ -124,6 +126,17 @@ impl Package {
             data.extend_from_slice(&entry.permissions.to_le_bytes());
             data.extend_from_slice(&(entry.contents.len() as u32).to_le_bytes());
             data.extend_from_slice(&entry.contents);
+
+            // Write target directory
+            if let Some(target_dir) = &entry.target_dir {
+                data.push(1u8);
+                let targ = target_dir.to_string_lossy();
+                let path_bytes = targ.as_bytes();
+                data.extend_from_slice(&(path_bytes.len() as u16).to_le_bytes());
+                data.extend_from_slice(path_bytes);
+            } else {
+                data.push(0u8);
+            }
         }
 
         // Write number of patches
@@ -283,7 +296,21 @@ impl Package {
             let mut contents = vec![0u8; content_len];
             cursor.read_exact(&mut contents)?;
 
-            package.add_file(path, permissions, contents, None);
+            let mut target_dir_flag = [0u8; 1];
+            cursor.read_exact(&mut target_dir_flag)?;
+            let target_dir = if target_dir_flag[0] != 0 {
+                let mut path_len = [0u8; 2];
+                cursor.read_exact(&mut path_len)?;
+                let path_len = u16::from_le_bytes(path_len) as usize;
+
+                let mut path_bytes = vec![0u8; path_len];
+                cursor.read_exact(&mut path_bytes)?;
+                Some(PathBuf::from(String::from_utf8(path_bytes)?))
+            } else {
+                None
+            };
+
+            package.add_file(path, permissions, contents, target_dir);
         }
 
         // Read patches
@@ -381,15 +408,33 @@ impl Package {
         Ok(package)
     }
 
-    pub fn install(&self, target_dir: Option<&Path>, cache: &mut Cache) -> Result<(), Box<dyn Error>> {
+    pub fn install(
+        &self,
+        target_dir: Option<&Path>,
+        cache: &mut Cache,
+    ) -> Result<(), Box<dyn Error>> {
         // Check if root is required and we're not root
         if self.requires_root && !is_root() {
             return Err("This package requires root privileges to install".into());
         }
-    
-        // Keep track of installed files
-        let mut installed_files = Vec::new();
-    
+
+        // Check if package is already installed
+        if cache.has_package(&self.name) {
+            return Err(format!("Package {} is already installed", self.name).into());
+        }
+
+        // Create package state for tracking changes
+        let mut package_state = PackageState {
+            installed_files: Vec::new(),
+            removed_files: HashMap::new(),
+            emptied_files: HashMap::new(),
+            patched_files: HashMap::new(),
+            version: self.version.clone(),
+        };
+
+        // Create a rollback closure for handling errors
+        let mut rollback_actions: Vec<Box<dyn FnOnce() -> Result<(), Box<dyn Error>>>> = Vec::new();
+
         // Remove files marked for removal
         for path in &self.files_to_remove {
             let full_path = if let Some(target) = target_dir {
@@ -397,65 +442,151 @@ impl Package {
             } else {
                 PathBuf::from(path)
             };
+
             if full_path.exists() {
+                let contents = fs::read(&full_path)?;
+                let metadata = fs::metadata(&full_path)?;
+                let permissions = metadata.permissions().mode();
+
+                package_state.removed_files.insert(
+                    full_path.to_string_lossy().into_owned(),
+                    FileState {
+                        content: Some(contents.clone()),
+                        permissions: Some(permissions),
+                    },
+                );
+
+                let path_clone = full_path.clone();
+                let contents_clone = contents.clone();
+                rollback_actions.push(Box::new(move || {
+                    let mut file = File::create(&path_clone)?;
+                    file.write_all(&contents_clone)?;
+                    fs::set_permissions(&path_clone, fs::Permissions::from_mode(permissions))?;
+                    Ok(())
+                }));
+
                 fs::remove_file(full_path)?;
             }
         }
-    
-        // Empty files marked for emptying via truncation
+
+        // Empty files marked for emptying
         for path in &self.files_to_empty {
             let full_path = if let Some(target) = target_dir {
                 target.join(path)
             } else {
                 PathBuf::from(path)
             };
+
             if full_path.exists() {
-                fs::File::create(full_path)?;
+                let contents = fs::read(&full_path)?;
+                let metadata = fs::metadata(&full_path)?;
+                let permissions = metadata.permissions().mode();
+
+                package_state.emptied_files.insert(
+                    full_path.to_string_lossy().into_owned(),
+                    FileState {
+                        content: Some(contents.clone()),
+                        permissions: Some(permissions),
+                    },
+                );
+
+                let path_clone = full_path.clone();
+                let contents_clone = contents.clone();
+                rollback_actions.push(Box::new(move || {
+                    let mut file = File::create(&path_clone)?;
+                    file.write_all(&contents_clone)?;
+                    fs::set_permissions(&path_clone, fs::Permissions::from_mode(permissions))?;
+                    Ok(())
+                }));
+
+                File::create(full_path)?;
             }
         }
-    
+
         // Install new files
         for (_, entry) in &self.files {
             let final_target = if let Some(custom_dir) = &entry.target_dir {
                 custom_dir.clone()
             } else if entry.permissions & 0o111 != 0 {
-                // If file is executable, use /usr/bin by default
                 PathBuf::from("/usr/bin")
             } else if let Some(target) = target_dir {
                 target.to_path_buf()
             } else {
-                return Err(
-                    "No target directory specified and no default directory configured".into(),
-                );
+               PathBuf::from("/usr/local")
             };
-    
+
             let target_path = final_target.join(&entry.path);
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent)?;
             }
+
+            package_state
+                .installed_files
+                .push(target_path.to_string_lossy().into_owned());
+
+            let path_clone = target_path.clone();
+            rollback_actions.push(Box::new(move || {
+                if path_clone.exists() {
+                    fs::remove_file(path_clone)?;
+                }
+                Ok(())
+            }));
+
             let mut file = File::create(&target_path)?;
             file.write_all(&entry.contents)?;
-    
-            let permissions = fs::Permissions::from_mode(entry.permissions);
-            fs::set_permissions(&target_path, permissions)?;
-            
-            // Add installed file to tracking list
-            installed_files.push(target_path.to_string_lossy().into_owned());
+            fs::set_permissions(&target_path, fs::Permissions::from_mode(entry.permissions))?;
         }
-    
+
         // Apply patches
         for patch in &self.patches {
+            let target_path = if let Some(target) = target_dir {
+                target.join(&patch.filename)
+            } else {
+                PathBuf::from(&patch.filename)
+            };
+
+            if target_path.exists() {
+                let contents = fs::read(&target_path)?;
+                let metadata = fs::metadata(&target_path)?;
+                let permissions = metadata.permissions().mode();
+
+                package_state.patched_files.insert(
+                    patch.filename.clone(),
+                    FileState {
+                        content: Some(contents.clone()),
+                        permissions: Some(permissions),
+                    },
+                );
+
+                let path_clone = target_path.clone();
+                let contents_clone = contents.clone();
+                rollback_actions.push(Box::new(move || {
+                    let mut file = File::create(&path_clone)?;
+                    file.write_all(&contents_clone)?;
+                    fs::set_permissions(&path_clone, fs::Permissions::from_mode(permissions))?;
+                    Ok(())
+                }));
+            }
+
             if let Some(target) = target_dir {
                 patch.apply(target.to_str().unwrap())?;
             } else {
                 patch.apply("/")?;
             }
         }
-    
-        // Update cache with installed files
-        cache.add(self.name.clone(), (installed_files, self.version.clone()));
-        cache.save()?;
-    
+
+        // If we got here, installation was successful
+        cache.add(self.name.clone(), package_state);
+        if let Err(e) = cache.save() {
+            // If we can't save the cache, roll back all changes
+            for action in rollback_actions.into_iter().rev() {
+                if let Err(e) = action() {
+                    eprintln!("Error during rollback: {}", e);
+                }
+            }
+            return Err(format!("Failed to save cache: {}", e).into());
+        }
+
         Ok(())
-    }    
+    }
 }

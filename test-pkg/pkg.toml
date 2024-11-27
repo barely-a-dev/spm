@@ -1,0 +1,11 @@
+# pkg.toml
+name = "spm-test-package"
+version = "1.0.0"
+file_permissions = { "bin/test-binary" = 0o755, "lib/test-lib.so" = 0o644 }
+files_to_remove = [
+    "/tmp/old-config.conf"
+]
+files_to_empty = [
+    "/tmp/log-file.log"
+]
+install_dirs = { "bin/test-binary" = "/usr/local/bin", "lib/test-lib.so" = "/usr/local/lib" }

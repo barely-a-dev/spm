@@ -19,6 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
+use std::io::Write;
 
 pub fn handle_package_file(
     input_file: &str,
@@ -462,7 +463,7 @@ pub fn handle_publish_package(
     // First verify the package is valid
     let _package = Package::load_package(Path::new(package_path)).expect("Invalid package");
 
-    let tokenfile = dirs::home_dir().unwrap_or("/root".into()).join(".spm.token.encrypted");
+    let tokenfile = PathBuf::from("/var/lib/spm/spm.token.encrypted");
 
     let token = if tokenfile.exists() {
         match config.get_github_token() {
@@ -1322,19 +1323,60 @@ pub fn handle_uninstall_package(
     cache: &mut Cache,
 ) -> Result<(), Box<dyn Error>> {
     let _lock = Lock::new("cache")?;
-    let _bin_lock = Lock::new("bin");
-    if let Some((installed_files, _)) = cache.remove(package_name) {
+    let _bin_lock = Lock::new("bin")?;
+    
+    if let Some(state) = cache.get_package(package_name) {
         println!("Uninstalling package {}...", package_name);
 
-        for file in installed_files {
-            if let Err(e) = fs::remove_file(&file) {
-                eprintln!("Warning: Failed to remove {}: {}", file, e);
-            } else {
-                println!("Removed {}", file);
+        // Restore emptied files
+        for (path, state) in &state.emptied_files {
+            if let Some(content) = &state.content {
+                if let Some(perms) = state.permissions {
+                    let mut file = File::create(path)?;
+                    file.write_all(content)?;
+                    fs::set_permissions(path, fs::Permissions::from_mode(perms))?;
+                    println!("Restored emptied file: {}", path);
+                }
             }
         }
 
+        // Restore patched files
+        for (path, state) in &state.patched_files {
+            if let Some(content) = &state.content {
+                if let Some(perms) = state.permissions {
+                    let mut file = File::create(path)?;
+                    file.write_all(content)?;
+                    fs::set_permissions(path, fs::Permissions::from_mode(perms))?;
+                    println!("Restored patched file: {}", path);
+                }
+            }
+        }
+
+        // Restore removed files
+        for (path, state) in &state.removed_files {
+            if let Some(content) = &state.content {
+                if let Some(perms) = state.permissions {
+                    let mut file = File::create(path)?;
+                    file.write_all(content)?;
+                    fs::set_permissions(path, fs::Permissions::from_mode(perms))?;
+                    println!("Restored removed file: {}", path);
+                }
+            }
+        }
+
+        // Remove installed files
+        for file in &state.installed_files {
+            if let Err(e) = fs::remove_file(file) {
+                eprintln!("Warning: Failed to remove {}: {}", file, e);
+            } else {
+                println!("Removed installed file: {}", file);
+            }
+        }
+
+        // Remove package from cache
+        cache.remove(package_name);
         cache.save()?;
+        
         println!("Package {} uninstalled successfully", package_name);
         Ok(())
     } else {

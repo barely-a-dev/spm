@@ -100,6 +100,7 @@ spm -v patch.rpat
 SPM uses the following configuration files:
 - `~/.spm.conf` - Main configuration
 - `/var/lib/spm/spm.db` - Package database
+- `/var/lib/spm/spm.token.encrypted` - The user's encrypted token file
 - `/var/cache/spm/spm.cache` - Installation cache
 
 ### Package Configuration

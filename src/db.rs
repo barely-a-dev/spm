@@ -149,7 +149,7 @@ impl Database {
         let client = reqwest::blocking::Client::new();
 
         for (package, _) in &self.entries {
-            let current_version = cache.get_version(package.to_string());
+            let current_version = cache.get_version(package.to_string()).unwrap_or("fail".to_string());
             let b = current_version.parse::<bool>();
             if b.is_err() || b.unwrap() {
                 let parts: Vec<&str> = self.src.split('/').collect();
@@ -203,43 +203,72 @@ impl Database {
     }
 }
 
-pub struct Cache {
-    installed_packages: HashMap<String, (Vec<String>, String)>, // Hashmap key is pkg names, Vec is installed files, String is version
+#[derive(Clone)]
+pub struct FileState {
+    pub content: Option<Vec<u8>>, // Original content of the file
+    pub permissions: Option<u32>, // Original permissions
 }
-// TODO: make it store not just installed files and remove them, but also removed files and their contents, emptied files and theirs, files before patches to restore them
+
+pub struct PackageState {
+    pub installed_files: Vec<String>, // Files installed by the package
+    pub removed_files: HashMap<String, FileState>, // Files removed by the package
+    pub emptied_files: HashMap<String, FileState>, // Files emptied by the package
+    pub patched_files: HashMap<String, FileState>, // Original state of patched files
+    pub version: String,              // Package version
+}
+
+pub struct Cache {
+    packages: HashMap<String, PackageState>,
+}
+
 impl Cache {
     pub fn load() -> Self {
         let mut cache = Cache {
-            installed_packages: HashMap::new(),
+            packages: HashMap::new(),
         };
 
         let path = PathBuf::from("/var/cache/spm/spm.cache");
         if path.exists() {
             if let Ok(contents) = fs::read_to_string(&path) {
                 for line in contents.lines() {
-                    if let Some((package, files_str)) = line.split_once('=') {
-                        // TODO: disallow & in package names
-                        let package_i: Vec<&str> = package
-                            .split('&')
-                            .collect();
-                        let package = package_i
-                        .first()
-                        .expect("Failed to get package name")
-                        .to_string();
-                        let version = package_i
-                        .last()
-                        .expect("Failed to get package name")
-                        .to_string();
-                        // Remove the brackets and split by commas
-                        let files_str = files_str.trim_start_matches('[').trim_end_matches(']');
-                        let files: Vec<String> = files_str
-                            .split(',')
-                            .map(|s| s.trim().trim_matches('"').to_string())
-                            .collect();
+                    if let Some((package_info, state_info)) = line.split_once('=') {
+                        let parts: Vec<&str> = package_info.split('&').collect();
+                        let package_name = parts[0].to_string();
+                        let version = parts[1].to_string();
 
-                        cache
-                            .installed_packages
-                            .insert(package.to_string(), (files, version));
+                        let mut state = PackageState {
+                            installed_files: Vec::new(),
+                            removed_files: HashMap::new(),
+                            emptied_files: HashMap::new(),
+                            patched_files: HashMap::new(),
+                            version,
+                        };
+
+                        // Parse sections separated by semicolons
+                        for section in state_info.split(';') {
+                            if section.is_empty() {
+                                continue;
+                            }
+
+                            let (section_type, data) = section.split_once(':').unwrap_or(("", ""));
+                            match section_type {
+                                "installed" => {
+                                    state.installed_files = parse_file_list(data);
+                                }
+                                "removed" => {
+                                    state.removed_files = parse_file_states(data);
+                                }
+                                "emptied" => {
+                                    state.emptied_files = parse_file_states(data);
+                                }
+                                "patched" => {
+                                    state.patched_files = parse_file_states(data);
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        cache.packages.insert(package_name, state);
                     }
                 }
             }
@@ -252,44 +281,248 @@ impl Cache {
         let path = PathBuf::from("/var/cache/spm/spm.cache");
         let mut file = File::create(&path)?;
 
-        //println!("{:#?}", self.installed_packages);
+        for (package_name, state) in &self.packages {
+            // Write package name and version
+            write!(file, "{}&{}=", package_name, state.version)?;
 
-        for (package, (files, version)) in &self.installed_packages {
-            let files_str = files
-                .iter()
-                .map(|s| format!("\"{}\"", s))
-                .collect::<Vec<_>>()
-                .join(", ");
+            // Write installed files
+            if !state.installed_files.is_empty() {
+                write!(file, "installed:")?;
+                write_file_list(&mut file, &state.installed_files)?;
+                write!(file, ";")?;
+            }
 
-            writeln!(file, "{}&{}=[{}]", package, version, files_str)?;
+            // Write removed files
+            if !state.removed_files.is_empty() {
+                write!(file, "removed:")?;
+                write_file_states(&mut file, &state.removed_files)?;
+                write!(file, ";")?;
+            }
+
+            // Write emptied files
+            if !state.emptied_files.is_empty() {
+                write!(file, "emptied:")?;
+                write_file_states(&mut file, &state.emptied_files)?;
+                write!(file, ";")?;
+            }
+
+            // Write patched files
+            if !state.patched_files.is_empty() {
+                write!(file, "patched:")?;
+                write_file_states(&mut file, &state.patched_files)?;
+                write!(file, ";")?;
+            }
+
+            writeln!(file)?;
         }
+
         Ok(())
     }
 
-    pub fn add(&mut self, package: String, (files, version): (Vec<String>, String)) {
-        self.installed_packages.insert(package, (files, version));
+    // pub fn add_file_state(
+    //     &mut self,
+    //     package: &str,
+    //     file_path: String,
+    //     state_type: &str,
+    //     content: Option<Vec<u8>>,
+    //     permissions: Option<u32>,
+    // ) {
+    //     let package_state =
+    //         self.packages
+    //             .entry(package.to_string())
+    //             .or_insert_with(|| PackageState {
+    //                 installed_files: Vec::new(),
+    //                 removed_files: HashMap::new(),
+    //                 emptied_files: HashMap::new(),
+    //                 patched_files: HashMap::new(),
+    //                 version: "0.0.0".to_string(),
+    //             });
+
+    //     let file_state = FileState {
+    //         content,
+    //         permissions,
+    //     };
+
+    //     match state_type {
+    //         "removed" => {
+    //             package_state.removed_files.insert(file_path, file_state);
+    //         }
+    //         "emptied" => {
+    //             package_state.emptied_files.insert(file_path, file_state);
+    //         }
+    //         "patched" => {
+    //             package_state.patched_files.insert(file_path, file_state);
+    //         }
+    //         _ => {}
+    //     }
+    // }
+
+    // Get package state by name
+    pub fn get_package(&self, package_name: &str) -> Option<&PackageState> {
+        self.packages.get(package_name)
     }
 
-    pub fn get_installed_files(&self, pack: String) -> Option<(Vec<String>, String)> {
-        self.installed_packages.get(&pack).cloned()
+    // Update package version
+    // pub fn set_package_version(&mut self, package_name: &str, version: String) {
+    //     if let Some(package_state) = self.packages.get_mut(package_name) {
+    //         package_state.version = version;
+    //     }
+    // }
+
+    // // Add an installed file to a package
+    // pub fn add_installed_file(&mut self, package_name: &str, file_path: String) {
+    //     let package_state = self
+    //         .packages
+    //         .entry(package_name.to_string())
+    //         .or_insert_with(|| PackageState {
+    //             installed_files: Vec::new(),
+    //             removed_files: HashMap::new(),
+    //             emptied_files: HashMap::new(),
+    //             patched_files: HashMap::new(),
+    //             version: "0.0.0".to_string(),
+    //         });
+
+    //     if !package_state.installed_files.contains(&file_path) {
+    //         package_state.installed_files.push(file_path);
+    //     }
+    // }
+
+    // Remove a package and its state from the cache
+    // pub fn remove_package(&mut self, package_name: &str) {
+    //     self.packages.remove(package_name);
+    // }
+
+    // Check if a package exists in the cache
+    pub fn has_package(&self, package_name: &str) -> bool {
+        self.packages.contains_key(package_name)
     }
 
-    pub fn get_version(&self, pack: String) -> String {
-        // First try to find an exact match with any version
-        for (cached_name, (_, version)) in &self.installed_packages {
-            if cached_name.split('&').next().unwrap_or(cached_name) == pack {
-                return version.clone();
-            }
-        }
-        // Return default version if not found
-        "false".to_string()
-    }
-
-    pub fn remove(&mut self, package: &str) -> Option<(Vec<String>, String)> {
-        self.installed_packages.remove(package)
-    }
-
+    // Get all package names in the cache
     pub fn list_installed(&self) -> Vec<String> {
-        self.installed_packages.keys().cloned().collect()
+        self.packages.keys().cloned().collect()
     }
+
+    // Clear all package states
+    // pub fn clear(&mut self) {
+    //     self.packages.clear();
+    // }
+
+    // Get the number of tracked packages
+    pub fn package_count(&self) -> usize {
+        self.packages.len()
+    }
+
+    pub fn get_version(&self, name: String) -> Option<String> {
+        return self.get_package(&name).map(|s| s.version.clone());
+    }
+
+    pub fn get_installed_files(&self, name: String) -> Option<Vec<String>> {
+        return self.get_package(&name).map(|s| s.installed_files.clone());
+    }
+
+    pub fn add(&mut self, name: String, state: PackageState) {
+        self.packages.insert(name, state);
+    }
+
+    pub fn remove(&mut self, name: &str) -> Option<PackageState> {
+        self.packages.remove(name)
+    }
+}
+
+// Helper functions for serialization/deserialization
+fn parse_file_list(data: &str) -> Vec<String> {
+    data.trim_matches(|c| c == '[' || c == ']')
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .collect()
+}
+
+fn parse_file_states(data: &str) -> HashMap<String, FileState> {
+    let mut states = HashMap::new();
+    if data.is_empty() {
+        return states;
+    }
+
+    // Remove the outer brackets
+    let content = data.trim_matches(|c| c == '[' || c == ']');
+
+    // Split by semicolon to get individual file entries
+    for entry in content.split(';') {
+        if entry.is_empty() {
+            continue;
+        }
+
+        // Find the position of the opening brace
+        if let Some(brace_pos) = entry.find('{') {
+            let path = entry[..brace_pos].to_string();
+            let state_data = &entry[brace_pos + 1..entry.len() - 1];
+
+            // Split the content and permissions
+            let parts: Vec<&str> = state_data.split(',').collect();
+
+            let content = if !parts[0].is_empty() {
+                base64::engine::general_purpose::STANDARD
+                    .decode(parts[0])
+                    .ok()
+            } else {
+                None
+            };
+
+            let permissions = if parts.len() > 1 && !parts[1].is_empty() {
+                parts[1].parse().ok()
+            } else {
+                None
+            };
+
+            states.insert(
+                path,
+                FileState {
+                    content,
+                    permissions,
+                },
+            );
+        }
+    }
+
+    states
+}
+
+fn write_file_list(file: &mut File, files: &[String]) -> Result<(), Box<dyn Error>> {
+    write!(file, "[")?;
+    for (i, path) in files.iter().enumerate() {
+        if i > 0 {
+            write!(file, ",")?;
+        }
+        write!(file, "\"{}\"", path)?;
+    }
+    write!(file, "]")?;
+    Ok(())
+}
+
+fn write_file_states(
+    file: &mut File,
+    states: &HashMap<String, FileState>,
+) -> Result<(), Box<dyn Error>> {
+    write!(file, "[")?;
+    for (i, (path, state)) in states.iter().enumerate() {
+        if i > 0 {
+            write!(file, ";")?;
+        }
+        write!(file, "{}{{", path)?;
+        if let Some(content) = &state.content {
+            write!(
+                file,
+                "{},",
+                base64::engine::general_purpose::STANDARD.encode(content)
+            )?;
+        } else {
+            write!(file, ",")?;
+        }
+        if let Some(perms) = state.permissions {
+            write!(file, "{}", perms)?;
+        }
+        write!(file, "}}")?;
+    }
+    write!(file, "]")?;
+    Ok(())
 }

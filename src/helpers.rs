@@ -12,7 +12,9 @@ use std::io::stdin;
 use std::io::Read;
 use std::io::Write;
 //use std::time::Duration;
+use crate::conversion::*;
 use crate::Security;
+use std::process::exit;
 use std::{
     error::Error,
     fs,
@@ -20,7 +22,6 @@ use std::{
     path::{Path, PathBuf},
     process,
 };
-use crate::conversion::*;
 
 // Helper functions for varint encoding/decoding
 pub fn write_varint<W: Write>(writer: &mut W, mut value: u32) -> Result<(), Box<dyn Error>> {
@@ -324,10 +325,9 @@ pub fn get_matches(
             process::exit(1);
         }
     } else if let Some(mut args) = matches.get_many::<String>("install-package") {
-        require_root("installing packages");
-        let _lock = Lock::new("db");
-        let _cache_lock = Lock::new("cache");
-        let _bin_lock = Lock::new("bin");
+        let (_, _cache_lock, _bin_lock) =
+            prefer_root("install a package", &matches, false, true, true);
+
         let package_path = args.next().expect("Package file argument required");
         let target_dir = args.next().map(|s| s.as_str()); // Convert to Option<&str>
 
@@ -337,6 +337,7 @@ pub fn get_matches(
         }
     } else if let Some(mut args) = matches.get_many::<String>("config") {
         require_root("updating config");
+        let _conf_lock = Lock::new("conf").expect("Failed to lock config file");
         let key = args.next().expect("Key argument required");
         let value = args.next().expect("Value argument required");
 
@@ -389,10 +390,8 @@ pub fn get_matches(
             }
         }
     } else if matches.contains_id("install") {
-        require_root("installing packages");
-        let _lock = Lock::new("db").expect("Failed to lock");
-        let _cache_lock = Lock::new("cache").expect("Failed to lock");
-        let _bin_lock = Lock::new("bin").expect("Failed to lock");
+        let (_lock, _cache_lock, _bin_lock) =
+            prefer_root("install packages", &matches, true, true, true);
 
         if let Some(packages) = matches.get_many::<String>("install") {
             let client = reqwest::blocking::Client::new();
@@ -451,10 +450,8 @@ pub fn get_matches(
             download(&database, p, o, None).expect("Failed to download package.");
         }
     } else if matches.contains_id("update") {
-        require_root("installing updates");
-        let _lock = Lock::new("db").expect("Failed to lock");
-        let _cache_lock = Lock::new("cache").expect("Failed to lock");
-        let _bin_lock = Lock::new("bin").expect("Failed to lock");
+        let (_lock, _cache_lock, _bin_lock) =
+            prefer_root("update packages", &matches, true, true, true);
 
         // Verify network is enabled
         if !config
@@ -476,7 +473,6 @@ pub fn get_matches(
 
         let client = reqwest::blocking::Client::new();
 
-        // Change this section to check if there are any values provided
         if let Some(packages) = matches.get_many::<String>("update").filter(|p| p.len() > 0) {
             // Update specific packages
             let packages: Vec<String> = packages.map(|s| s.to_string()).collect();
@@ -488,6 +484,17 @@ pub fn get_matches(
                 let package_name = name.trim_end_matches(".spm");
                 if packages.contains(&package_name.to_string()) {
                     println!("Updating {}: {} -> {}", package_name, current, latest);
+
+                    println!("Removing {} v{}", package_name, current);
+                    match handle_uninstall_package(package_name, cache) {
+                        Ok(_) => {
+                            println!("Successfully removed outdated package {}", package_name);
+                        }
+                        Err(e) => {
+                            println!("Failed to remove {} before update: {e}", package_name);
+                            exit(1);
+                        }
+                    }
 
                     match download_and_install_package(name, database, cache, &client) {
                         Ok(_) => {
@@ -541,6 +548,7 @@ pub fn get_matches(
         }
     } else if matches.get_flag("update-db") {
         require_root("updating the database");
+        let _lock = Lock::new("db").expect("Failed to lock database");
         if !config
             .get("net_enabled")
             .unwrap_or("".to_string())
@@ -565,22 +573,33 @@ pub fn get_matches(
             process::exit(1);
         }
     } else if let Some(package) = matches.get_one::<String>("uninstall") {
-        require_root("uninstalling packages");
+        let (_lock, _cache_lock, _bin_lock) =
+            prefer_root("uninstall packages", &matches, true, true, true);
+
         if let Err(e) = handle_uninstall_package(package, cache) {
             eprintln!("Failed to uninstall package: {}", e);
             process::exit(1);
         }
-        // } else if matches.contains_id("do-nothing") {
-        //     let def = &"5000".to_string();
-        //     let len = matches.get_one::<String>("do-nothing").unwrap_or(def);
-        //     std::thread::sleep(Duration::from_millis(len.parse::<u64>().unwrap_or(5000)));
-        // } else if matches.get_flag("lock-test") {
-        //     let _lock = Lock::new("db").expect("Failed to lock");
-        // } else if matches.contains_id("list") {
+    // } else if matches.contains_id("do-nothing") {
+    //     let def = &"5000".to_string();
+    //     let len = matches.get_one::<String>("do-nothing").unwrap_or(def);
+    //     std::thread::sleep(Duration::from_millis(len.parse::<u64>().unwrap_or(5000)));
+    // } else if matches.get_flag("lock-test") {
+    //     let _lock = Lock::new("db").expect("Failed to lock");
+    } else if matches.contains_id("list") {
+        match cache.package_count() {
+            0 => {
+                println!("No packages installed.");
+                exit(1)
+            }
+            1 => println!("1 package installed."),
+            f => println!("{f} packages installed."),
+        }
+
         match matches.get_one::<String>("list") {
             Some(package) => {
                 // List files for specific package
-                if let Some((files, _)) = cache.get_installed_files(package.to_string()) {
+                if let Some(files) = cache.get_installed_files(package.to_string()) {
                     println!("Files installed by package {}:", package);
                     for file in files {
                         // Now we iterate over the Vec<String> inside the Some()
@@ -600,7 +619,7 @@ pub fn get_matches(
                     println!("Installed packages:");
                     for package in installed {
                         println!("\n{}:", package);
-                        if let Some((files, _)) = cache.get_installed_files(package.clone()) {
+                        if let Some(files) = cache.get_installed_files(package.clone()) {
                             for file in files {
                                 println!("  {}", file);
                             }
@@ -609,6 +628,7 @@ pub fn get_matches(
                 }
             }
         }
+    } else if matches.get_flag("statistics") {
     } else if let Some(mut args) = matches.get_many::<String>("convert-file") {
         let input_file = args.next().expect("Input file argument required");
         let output_file = args.next().expect("Output file argument required");
@@ -618,9 +638,85 @@ pub fn get_matches(
             process::exit(1);
         }
         println!("File converted successfully");
+    } else if let Some(output) = matches.get_one::<String>("mirror-repo") {
+        let (_lock, _, _) = prefer_root("install packages", &matches, true, false, false);
+        database.update_db().expect("Failed to update databse");
+        let packages = database
+            .list_all()
+            .expect("Failed to retrieve package list");
+
+        for pack in packages {
+            let mut current_out = output.clone();
+            current_out.push_str(&pack);
+            match download(database, &pack, &current_out, None) {
+                Ok(_) => println!("Successfully mirrored package {pack}"),
+                Err(e) => eprintln!("Failed to download {pack}: {e}"),
+            }
+        }
     } else {
         println!("Use -h or --help for usage information.");
     }
+}
+
+fn prompt_non_root_confirmation(force_op: bool, operation: &str) -> bool {
+    if force_op {
+        println!("Proceeding...");
+        return true;
+    }
+
+    print!("You aren't root! Are you sure you want to proceed? Attempting to {operation} can cause errors and corruptions. (y/N): ");
+    std::io::stdout().flush().unwrap(); // Ensure prompt is displayed immediately
+
+    let mut input = String::new();
+    match stdin().read_line(&mut input) {
+        Ok(_) => {
+            let input = input.trim().to_lowercase();
+            if input == "y" || input == "yes" {
+                println!("Proceeding...");
+                true
+            } else {
+                println!("Aborting...");
+                false
+            }
+        }
+        Err(_) => {
+            eprintln!("Failed to read input, aborting...");
+            false
+        }
+    }
+}
+
+fn prefer_root(
+    operation: &str,
+    matches: &clap::ArgMatches,
+    lock_db: bool,
+    lock_cache: bool,
+    lock_bin: bool,
+) -> (Option<Lock>, Option<Lock>, Option<Lock>) {
+    let mut db_lock = None;
+    let mut cache_lock = None;
+    let mut bin_lock = None;
+
+    if !is_root() {
+        if !prompt_non_root_confirmation(matches.get_flag("force-op"), operation) {
+            std::process::exit(1);
+        }
+    } else {
+        // Only create locks that are requested
+        if lock_db {
+            db_lock = Some(Lock::new("db").expect("Failed to lock database"));
+        }
+
+        if lock_cache {
+            cache_lock = Some(Lock::new("cache").expect("Failed to lock cache"));
+        }
+
+        if lock_bin {
+            bin_lock = Some(Lock::new("bin").expect("Failed to lock binary"));
+        }
+    }
+
+    (db_lock, cache_lock, bin_lock)
 }
 
 fn download(

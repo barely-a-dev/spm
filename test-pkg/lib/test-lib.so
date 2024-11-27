@@ -1,0 +1,4 @@
+// This is just a dummy representation 
+const char* test_function() {
+    return "SPM test library";
+}

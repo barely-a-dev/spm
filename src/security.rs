@@ -3,17 +3,17 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::helpers;
+use crate::lock::Lock;
 
 pub struct Security {}
 
 impl Security {
     pub fn encrypt_and_save_token(token: String, key: &str) -> std::io::Result<()> {
+        let _lock = Lock::new("token_enc").expect("Failed to lock token file");
         let mc = new_magic_crypt!(key, 256);
         let encrypted = mc.encrypt_str_to_base64(token);
         fs::write(
-            dirs::home_dir()
-                .unwrap_or("/root".into())
-                .join(".spm.token.encrypted"),
+            PathBuf::from("/var/lib/spm/spm.token.encrypted"),
             encrypted,
         )?;
         Ok(())
@@ -22,9 +22,7 @@ impl Security {
     pub fn read_encrypted_token(key: &str) -> std::io::Result<String> {
         let mc = new_magic_crypt!(key, 256);
         let encrypted = fs::read_to_string(
-            dirs::home_dir()
-                .unwrap_or("/root".into())
-                .join(".spm.token.encrypted"),
+            PathBuf::from("/var/lib/spm/spm.token.encrypted"),
         );
 
         match encrypted {
@@ -69,13 +67,8 @@ impl Security {
     }
 
     pub fn reset_token() -> Result<(), Box<dyn std::error::Error>> {
-        let tokenfile = PathBuf::from(
-            dirs::home_dir()
-                .unwrap_or("/root".into())
-                .join(".spm.token.encrypted"),
-        )
-        .canonicalize()
-        .unwrap_or("/root/.spm.token.encrypted".into());
+        let tokenfile =
+            PathBuf::from("/var/lib/spm/spm.token.encrypted");
 
         // Only try to remove the file if it exists
         if tokenfile.exists() {

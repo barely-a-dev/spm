@@ -39,12 +39,12 @@ impl Config {
     fn load() -> Result<Self, Box<dyn Error>> {
         let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
         path.push(".spm.conf");
-
+        
         let mut settings = HashMap::new();
         if !path.exists() {
             let mut file = File::create(&path)?;
-            file.write_all(b"net_enabled=false\n")?;
-            settings.insert("net_enabled".to_string(), "false".to_string());
+            file.write_all(b"net_enabled=true\n")?;
+            settings.insert("net_enabled".to_string(), "true".to_string());
         } else {
             let contents = fs::read_to_string(&path)?;
             for line in contents.lines() {
@@ -143,7 +143,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("2.11.21")
+        .version("3.12.21")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -196,8 +196,7 @@ fn main() {
         )
         .arg(
             Arg::new("install-package")
-                .short('i')
-                .long("install-package")
+                .long("install-pack")
                 .help(
                     "Install a local package. Deprecated: only use if -I/--install isn't working.",
                 )
@@ -299,6 +298,13 @@ fn main() {
                 .value_name("PACKAGE"),
         )
         .arg(
+            Arg::new("statistics")
+                .short('S')
+                .long("stats")
+                .help("List installed packages and their files. Optionally specify a package name")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
             Arg::new("mass-package")
                 .short('m')
                 .long("mass-pack")
@@ -316,16 +322,30 @@ fn main() {
         )
         .arg(
             Arg::new("convert-file")
-                .short('m')
+                .short('n')
                 .long("convert")
                 .help("Convert another package manager's package file to an SPM package")
                 .num_args(2)
                 .value_names(["IN_FILE", "OUT_FILE"])
         )
         .arg(
+            Arg::new("mirror-repo")
+                .long("mirror")
+                .help("Mirrors the contents of the entire current package repository into the specified directory")
+                .num_args(1)
+                .value_name("OUTPUT_DIR")
+        )
+        .arg(
             Arg::new("reset-token")
                 .long("rtok")
                 .help("Reset your token")
+                .action(ArgAction::SetTrue)
+        )
+        .arg(
+            Arg::new("force-op")
+                .short('o')
+                .long("force")
+                .help("Force a dangerous operation without user input, such as installing packages without root")
                 .action(ArgAction::SetTrue)
         )
         // .arg(
