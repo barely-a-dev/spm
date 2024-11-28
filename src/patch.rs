@@ -20,8 +20,8 @@ use std::path::Path;
 use zstd::{encode_all, decode_all};
 use crate::helpers::{read_varint, write_varint};
 
-const MAGIC: &[u8] = b"RPAT";
-const VERSION: u8 = 1;
+pub const MAGIC: &[u8] = b"RPAT";
+pub const VERSION: u8 = 1;
 const MIN_SECTION_MERGE_DISTANCE: usize = 16; // Merge sections if gap is smaller than this
 
 pub struct Patch {

@@ -5,7 +5,40 @@
 4. Package name (UTF-8 bytes)
 5. Package version length (2 bytes, little endian)
 6. Package version (UTF-8 bytes)
-7. Data?
+7. Compressed data block containing:
+    a. Requires root flag (1 byte)
+    b. Number of files (4 bytes, little endian)
+    c. For each file:
+        - Path length (2 bytes, little endian)
+        - Path (UTF-8 bytes)
+        - Permissions (4 bytes, little endian)
+        - Content length (4 bytes, little endian)
+        - Content (bytes)
+        - Target directory flag (1 byte)
+        - If target directory flag is 1:
+            - Target path length (2 bytes, little endian)
+            - Target path (UTF-8 bytes)
+    d. Number of patches (4 bytes, little endian)
+    e. For each patch:
+        - Patch length (4 bytes, little endian)
+        - Patch data containing:
+            - Magic number "RPAT" (4 bytes)
+            - Version (1 byte)
+            - Filename length (2 bytes, little endian)
+            - Filename (UTF-8 bytes)
+            - Number of sections (4 bytes, little endian)
+            - For each section:
+                - Relative offset (varint)
+                - Length (varint)
+                - Contents (bytes)
+    f. Number of files to remove (4 bytes, little endian)
+    g. For each file to remove:
+        - Path length (2 bytes, little endian)
+        - Path (UTF-8 bytes)
+    h. Number of files to empty (4 bytes, little endian)
+    i. For each file to empty:
+        - Path length (2 bytes, little endian)
+        - Path (UTF-8 bytes)
 */
 
 use crate::db::FileState;
@@ -27,6 +60,68 @@ const MAGIC: &[u8] = b"SPKG";
 const VERSION: u8 = 2;
 
 //TODO: dependencies, alternate package versions aside from most recent (do before dependencies), build scripts, pre/post install scripts, downgrade packages/choose specific versions, package groups
+
+pub struct Dependency {
+    name: String,
+    valid_versions: Vec<String>
+}
+
+impl Dependency {
+    pub fn add_valid_ver(&mut self, ver: String) -> anyhow::Result<()> {
+        if ver.contains('-') {
+            // Treat it as a range here (IE 0.2.1-0.2.9 corresponds to 0.2.1..=9)
+            let mut s = ver.split('-');
+            let start = s.next().expect("Failed to get start of version range");
+            let end = s.next().expect("Failed to get end of version range");
+            
+            // Split version numbers into components
+            let start_parts: Vec<u32> = start
+                .split('.')
+                .map(|n| n.parse::<u32>())
+                .collect::<Result<Vec<u32>, _>>()?;
+            
+            let end_parts: Vec<u32> = end
+                .split('.')
+                .map(|n| n.parse::<u32>())
+                .collect::<Result<Vec<u32>, _>>()?;
+            
+            // Validate that we have versions in major.minor.patch format
+            if start_parts.len() != 3 || end_parts.len() != 3 {
+                return Err(anyhow::anyhow!("Version numbers must be in format major.minor.patch"));
+            }
+            
+            // Check that only the minor or patch number differs
+            if start_parts[0] != end_parts[0] {
+                return Err(anyhow::anyhow!("Only minor or patch version can differ in version ranges"));
+            }
+            
+            let patch_range: bool = start_parts[2] != end_parts[2];
+            let minor_range: bool = start_parts[1] != end_parts[1];
+
+            if patch_range && minor_range
+            {
+                return Err(anyhow::anyhow!("Only one version number can differ in version ranges"))
+            } else if patch_range
+            {
+                for patch in start_parts[2]..=end_parts[2] {
+                    let version = format!("{}.{}.{}", start_parts[0], start_parts[1], patch);
+                    self.valid_versions.push(version);
+                }
+            } else if minor_range
+            {
+                for minor in start_parts[1]..=end_parts[1] {
+                    let version = format!("{}.{}.{}", start_parts[0], minor, start_parts[2]);
+                    self.valid_versions.push(version);
+                }
+            }
+        } else {
+            // Directly add it
+            self.valid_versions.push(ver);
+        }
+        Ok(())
+    }
+}
+
 pub struct Package {
     pub files: HashMap<PathBuf, FileEntry>,
     pub patches: Vec<Patch>,
@@ -35,6 +130,7 @@ pub struct Package {
     pub requires_root: bool,
     pub version: String,
     pub name: String,
+    pub dependencies: Vec<Dependency>,
 }
 
 pub struct FileEntry {
@@ -54,7 +150,22 @@ impl Package {
             files_to_remove: Vec::new(),
             files_to_empty: Vec::new(),
             requires_root: false,
+            dependencies: Vec::new(),
         }
+    }
+
+    pub fn add_dependency(&mut self, name: String, vers: Vec<String>)
+    {
+        let mut dep = Dependency
+        {
+            name,
+            valid_versions: Vec::new(),
+        };
+        for ver in vers
+        {
+            dep.add_valid_ver(ver).expect("Failed to add valid version");
+        }
+        self.dependencies.push(dep);
     }
 
     pub fn add_file(
@@ -108,6 +219,8 @@ impl Package {
         file.write_all(&(version_bytes.len() as u16).to_le_bytes())?;
         file.write_all(version_bytes)?;
 
+        // TODO: dependency stuff here
+
         // Prepare package data
         let mut data = Vec::new();
 
@@ -146,8 +259,8 @@ impl Package {
         for patch in &self.patches {
             let mut patch_data = Vec::new();
             // Write patch format
-            patch_data.extend_from_slice(MAGIC);
-            patch_data.push(VERSION);
+            patch_data.extend_from_slice(crate::patch::MAGIC);
+            patch_data.push(crate::patch::VERSION);
 
             // Write filename
             let filename_bytes = patch.filename.as_bytes();
@@ -253,6 +366,8 @@ impl Package {
         let mut version_bytes = vec![0u8; version_len];
         file.read_exact(&mut version_bytes)?;
         let version = String::from_utf8(version_bytes)?;
+
+        // TODO: dependency stuff here
 
         let mut package = Package::new();
         package.name = name.clone();
