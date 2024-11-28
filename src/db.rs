@@ -149,7 +149,7 @@ impl Database {
         let client = reqwest::blocking::Client::new();
 
         for (package, _) in &self.entries {
-            let current_version = cache.get_version(package.to_string()).unwrap_or("fail".to_string());
+            let current_version = cache.get_version(package.to_string()).unwrap_or("No Version".to_string());
             let b = current_version.parse::<bool>();
             if b.is_err() || b.unwrap() {
                 let parts: Vec<&str> = self.src.split('/').collect();

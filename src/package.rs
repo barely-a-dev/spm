@@ -26,7 +26,7 @@ use zstd::{decode_all, encode_all};
 const MAGIC: &[u8] = b"SPKG";
 const VERSION: u8 = 2;
 
-//TODO: dependences, alternate package versions aside from most recent (do before dependencies), build scripts, pre/post install scripts, downgrade packages/choose specific versions, package groups
+//TODO: dependencies, alternate package versions aside from most recent (do before dependencies), build scripts, pre/post install scripts, downgrade packages/choose specific versions, package groups
 pub struct Package {
     pub files: HashMap<PathBuf, FileEntry>,
     pub patches: Vec<Patch>,
