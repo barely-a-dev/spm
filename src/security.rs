@@ -12,8 +12,10 @@ impl Security {
         let _lock = Lock::new("token_enc").expect("Failed to lock token file");
         let mc = new_magic_crypt!(key, 256);
         let encrypted = mc.encrypt_str_to_base64(token);
+        let mut tokenfile = dirs::home_dir().expect("Failed to get home directory");
+        tokenfile.push(".spm.token.encrypted");
         fs::write(
-            PathBuf::from("/var/lib/spm/spm.token.encrypted"),
+            tokenfile,
             encrypted,
         )?;
         Ok(())
@@ -21,8 +23,10 @@ impl Security {
 
     pub fn read_encrypted_token(key: &str) -> std::io::Result<String> {
         let mc = new_magic_crypt!(key, 256);
+        let mut tokenfile = dirs::home_dir().expect("Failed to get home directory");
+        tokenfile.push(".spm.token.encrypted");
         let encrypted = fs::read_to_string(
-            PathBuf::from("/var/lib/spm/spm.token.encrypted"),
+            tokenfile
         );
 
         match encrypted {
@@ -67,8 +71,8 @@ impl Security {
     }
 
     pub fn reset_token() -> Result<(), Box<dyn std::error::Error>> {
-        let tokenfile =
-            PathBuf::from("/var/lib/spm/spm.token.encrypted");
+        let mut tokenfile = dirs::home_dir().expect("Failed to get home directory");
+        tokenfile.push(".spm.token.encrypted");
 
         // Only try to remove the file if it exists
         if tokenfile.exists() {

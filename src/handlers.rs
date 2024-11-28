@@ -471,7 +471,8 @@ pub fn handle_publish_package(
         println!("Found packages:\n\t{:#?}", found);
     }
 
-    let tokenfile = PathBuf::from("/var/lib/spm/spm.token.encrypted");
+    let mut tokenfile = dirs::home_dir().expect("Failed to get home directory");
+    tokenfile.push(".spm.token.encrypted");
 
     let token = if tokenfile.exists() {
         match config.get_github_token() {

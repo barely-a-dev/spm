@@ -22,11 +22,10 @@ cd spm
 echo "net_enabled=true" > ~/.spm.conf
 
 # Create necessary directories
-mkdir -p /var/lib/spm
 mkdir -p /var/cache/spm
 
 # Create database and cache file
-touch /var/lib/spm/spm.db
+touch ~/.spm.db
 touch /var/cache/spm/spm.cache
 
 echo "Installing SPM..."

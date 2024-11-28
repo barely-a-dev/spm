@@ -6,7 +6,7 @@ use reqwest;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{self, File};
+use std::fs::{self, create_dir_all, File};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -33,10 +33,18 @@ impl Database {
         })
     }
     pub fn load(&mut self) -> Result<(), Box<dyn Error>> {
-        let path = PathBuf::from("/var/lib/spm/spm.db");
+        let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
+        path.push(".spm.db");
 
         if !path.exists() {
-            File::create(&path)?;
+            let par = path.parent().expect("Failed to get path parent");
+            if !PathBuf::from(par).exists()
+            {
+                fs::create_dir_all(par)?;
+            }
+            else {
+                File::create(&path)?;
+            }
             self.update_db()?;
         } else {
             let contents = fs::read_to_string(&path)?;
@@ -136,7 +144,8 @@ impl Database {
         }
 
         // Save to disk
-        let path = PathBuf::from("/var/lib/spm/spm.db");
+        let mut path = dirs::home_dir().ok_or("Cannot find home directory")?;
+        path.push(".spm.db");
 
         let mut file = File::create(&path)?;
         for (name, (version, versions)) in &self.entries {

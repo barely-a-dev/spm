@@ -629,16 +629,17 @@ impl Package {
             } else {
                 PathBuf::from("/usr/local")
             };
-
             let target_path = final_target.join(&entry.path);
             if let Some(parent) = target_path.parent() {
-                fs::create_dir_all(parent)?;
+                match fs::create_dir_all(parent) {
+                    Ok(_) => {},
+                    Err(e) => println!("{}", e),
+                }
             }
 
             package_state
                 .installed_files
                 .push(target_path.to_string_lossy().into_owned());
-
             let path_clone = target_path.clone();
             rollback_actions.push(Box::new(move || {
                 if path_clone.exists() {
@@ -646,7 +647,7 @@ impl Package {
                 }
                 Ok(())
             }));
-
+            
             let mut file = File::create(&target_path)?;
             file.write_all(&entry.contents)?;
             fs::set_permissions(&target_path, fs::Permissions::from_mode(entry.permissions))?;
