@@ -1,6 +1,6 @@
 [package]
 name = "spm"
-version = "3.12.21"
+version = "3.12.22"
 edition = "2021"
 license = "GPL-3.0"
 

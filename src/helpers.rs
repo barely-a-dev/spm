@@ -790,8 +790,13 @@ fn download_and_install_package(
     package_name: &str,
     database: &Database,
     cache: &mut Cache,
-    client: &reqwest::blocking::Client, // Note: kept for compatibility but unused
+    client: &reqwest::blocking::Client,
 ) -> Result<(), Box<dyn Error>> {
+    // Check if package is already installed
+    if cache.has_package(package_name) {
+        return Err(format!("Package {} is already installed", package_name).into());
+    }
+
     // Create temporary file path
     let temp_path = format!("/tmp/{}", package_name);
 

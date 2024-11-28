@@ -62,8 +62,8 @@ const VERSION: u8 = 2;
 //TODO: dependencies, alternate package versions aside from most recent (do before dependencies), build scripts, pre/post install scripts, downgrade packages/choose specific versions, package groups
 
 pub struct Dependency {
-    name: String,
-    valid_versions: Vec<String>
+    pub name: String,
+    pub valid_versions: Vec<String>,
 }
 
 impl Dependency {
@@ -73,42 +73,45 @@ impl Dependency {
             let mut s = ver.split('-');
             let start = s.next().expect("Failed to get start of version range");
             let end = s.next().expect("Failed to get end of version range");
-            
+
             // Split version numbers into components
             let start_parts: Vec<u32> = start
                 .split('.')
                 .map(|n| n.parse::<u32>())
                 .collect::<Result<Vec<u32>, _>>()?;
-            
+
             let end_parts: Vec<u32> = end
                 .split('.')
                 .map(|n| n.parse::<u32>())
                 .collect::<Result<Vec<u32>, _>>()?;
-            
+
             // Validate that we have versions in major.minor.patch format
             if start_parts.len() != 3 || end_parts.len() != 3 {
-                return Err(anyhow::anyhow!("Version numbers must be in format major.minor.patch"));
+                return Err(anyhow::anyhow!(
+                    "Version numbers must be in format major.minor.patch"
+                ));
             }
-            
+
             // Check that only the minor or patch number differs
             if start_parts[0] != end_parts[0] {
-                return Err(anyhow::anyhow!("Only minor or patch version can differ in version ranges"));
+                return Err(anyhow::anyhow!(
+                    "Only minor or patch version can differ in version ranges"
+                ));
             }
-            
+
             let patch_range: bool = start_parts[2] != end_parts[2];
             let minor_range: bool = start_parts[1] != end_parts[1];
 
-            if patch_range && minor_range
-            {
-                return Err(anyhow::anyhow!("Only one version number can differ in version ranges"))
-            } else if patch_range
-            {
+            if patch_range && minor_range {
+                return Err(anyhow::anyhow!(
+                    "Only one version number can differ in version ranges"
+                ));
+            } else if patch_range {
                 for patch in start_parts[2]..=end_parts[2] {
                     let version = format!("{}.{}.{}", start_parts[0], start_parts[1], patch);
                     self.valid_versions.push(version);
                 }
-            } else if minor_range
-            {
+            } else if minor_range {
                 for minor in start_parts[1]..=end_parts[1] {
                     let version = format!("{}.{}.{}", start_parts[0], minor, start_parts[2]);
                     self.valid_versions.push(version);
@@ -154,15 +157,12 @@ impl Package {
         }
     }
 
-    pub fn add_dependency(&mut self, name: String, vers: Vec<String>)
-    {
-        let mut dep = Dependency
-        {
+    pub fn add_dependency(&mut self, name: String, vers: Vec<String>) {
+        let mut dep = Dependency {
             name,
             valid_versions: Vec::new(),
         };
-        for ver in vers
-        {
+        for ver in vers {
             dep.add_valid_ver(ver).expect("Failed to add valid version");
         }
         self.dependencies.push(dep);
@@ -533,7 +533,7 @@ impl Package {
             return Err("This package requires root privileges to install".into());
         }
 
-        // Check if package is already installed
+        // Double check if package is already installed
         if cache.has_package(&self.name) {
             return Err(format!("Package {} is already installed", self.name).into());
         }
@@ -627,7 +627,7 @@ impl Package {
             } else if let Some(target) = target_dir {
                 target.to_path_buf()
             } else {
-               PathBuf::from("/usr/local")
+                PathBuf::from("/usr/local")
             };
 
             let target_path = final_target.join(&entry.path);

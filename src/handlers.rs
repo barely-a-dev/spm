@@ -12,6 +12,7 @@ use base64::Engine;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::{
     error::Error,
@@ -19,7 +20,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
-use std::io::Write;
 
 pub fn handle_package_file(
     input_file: &str,
@@ -463,6 +463,14 @@ pub fn handle_publish_package(
     // First verify the package is valid
     let _package = Package::load_package(Path::new(package_path)).expect("Invalid package");
 
+    let (valid, missing, found) = database.search_for_deps(_package.dependencies);
+
+    if !valid {
+        println!("Missing dependencies not found in DB. Proceeding, but note that your package may not be able to be installed until those packages are available.");
+        println!("Missing packages:\n\t{:#?}", missing);
+        println!("Found packages:\n\t{:#?}", found);
+    }
+
     let tokenfile = PathBuf::from("/var/lib/spm/spm.token.encrypted");
 
     let token = if tokenfile.exists() {
@@ -493,7 +501,9 @@ pub fn handle_publish_package(
 
     if !user_response.status().is_success() {
         println!("Token: {}", token);
-        return Err("Unable to get user information. Try to reset your token using spm --rtok".into());
+        return Err(
+            "Unable to get user information. Try to reset your token using spm --rtok".into(),
+        );
     }
 
     let user_info: Value = user_response.json()?;
@@ -1253,10 +1263,11 @@ pub fn handle_dev_pub(
         package_name.as_ref().unwrap_or(&"unnamed".to_string())
     ));
 
-    if package_file.exists()
-    {
+    if package_file.exists() {
         println!("Package file exists, erasing...");
-        fs::remove_file(&package_file).expect("Failed to erase existing package file. Result may be corrupt or creation may fail.");
+        fs::remove_file(&package_file).expect(
+            "Failed to erase existing package file. Result may be corrupt or creation may fail.",
+        );
     }
 
     if let Some(output) = output_file {
@@ -1324,7 +1335,7 @@ pub fn handle_uninstall_package(
 ) -> Result<(), Box<dyn Error>> {
     let _lock = Lock::new("cache")?;
     let _bin_lock = Lock::new("bin")?;
-    
+
     if let Some(state) = cache.get_package(package_name) {
         println!("Uninstalling package {}...", package_name);
 
@@ -1376,7 +1387,7 @@ pub fn handle_uninstall_package(
         // Remove package from cache
         cache.remove(package_name);
         cache.save()?;
-        
+
         println!("Package {} uninstalled successfully", package_name);
         Ok(())
     } else {

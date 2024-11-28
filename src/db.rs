@@ -1,5 +1,7 @@
 use crate::lock::Lock;
+use crate::package;
 use base64::Engine;
+use package::Dependency;
 use reqwest;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -10,7 +12,7 @@ use std::path::PathBuf;
 
 pub struct Database {
     src: String,
-    entries: HashMap<String, String>,
+    entries: HashMap<String, (String, Vec<String>)>, // K: name, V.0: recent version, V.1: all versions
 }
 
 impl Database {
@@ -39,10 +41,12 @@ impl Database {
         } else {
             let contents = fs::read_to_string(&path)?;
             for line in contents.lines() {
-                let parts: Vec<&str> = line.split(':').collect();
-                if parts.len() == 2 {
+                let parts: Vec<&str> = line.split(':').collect(); // <NAME>:<RECENT_VER>:all available versions
+                if parts.len() == 3 {
+                    let all_versions: Vec<&str> = parts[2].trim().split(',').collect();
+                    let all_versions = all_versions.iter().map(|s| s.to_string()).collect();
                     self.entries
-                        .insert(parts[0].to_string(), parts[1].to_string());
+                        .insert(parts[0].to_string(), (parts[1].to_string(), all_versions));
                 }
             }
         }
@@ -118,8 +122,10 @@ impl Database {
                                 {
                                     if let Ok(version) = String::from_utf8(decoded) {
                                         let version = version.trim();
-                                        self.entries
-                                            .insert(package_name.to_string(), version.to_string());
+                                        self.entries.insert(
+                                            package_name.to_string(),
+                                            (version.to_string(), Vec::new()),
+                                        ); // TODO!!
                                     }
                                 }
                             }
@@ -133,8 +139,11 @@ impl Database {
         let path = PathBuf::from("/var/lib/spm/spm.db");
 
         let mut file = File::create(&path)?;
-        for (name, version) in &self.entries {
-            writeln!(file, "{}:{}", name, version)?;
+        for (name, (version, versions)) in &self.entries {
+            write!(file, "{}:{}", name, version)?;
+            let vers_string = versions.join(",");
+            let vers_string = vers_string.trim_end_matches(',');
+            writeln!(file, "{}", vers_string)?;
         }
 
         Ok(())
@@ -143,13 +152,46 @@ impl Database {
     pub fn exact_search(&self, query: String) -> Option<String> {
         self.entries.get(&query).map(|_| query)
     }
+
+    pub fn search_for_deps(&self, deps: Vec<Dependency>) -> (bool, Vec<String>, Vec<String>) {
+        let mut valid = true;
+        let mut missing: Vec<String> = vec![];
+        let mut found: Vec<String> = vec![];
+        for dep in deps {
+            let result = self.search_for_dep(&dep);
+            valid = valid && result;
+
+            if result {
+                found.push(dep.name);
+            } else {
+                missing.push(dep.name);
+            }
+        }
+        (valid, missing, found)
+    }
+
+    pub fn search_for_dep(&self, dep: &Dependency) -> bool {
+        let self_dep = self.entries.get(&dep.name);
+        if self_dep.is_none() {
+            return false;
+        }
+
+        self_dep
+            .unwrap()
+            .1
+            .iter()
+            .any(|v| dep.valid_versions.contains(v))
+    }
+
     pub fn check_updates(&self, cache: &Cache) -> Vec<(String, String, String)> {
         // Returns (name, current_version, available_version)
         let mut updates = Vec::new();
         let client = reqwest::blocking::Client::new();
 
         for (package, _) in &self.entries {
-            let current_version = cache.get_version(package.to_string()).unwrap_or("No Version".to_string());
+            let current_version = cache
+                .get_version(package.to_string())
+                .unwrap_or("No Version".to_string());
             let b = current_version.parse::<bool>();
             if b.is_err() || b.unwrap() {
                 let parts: Vec<&str> = self.src.split('/').collect();
@@ -274,6 +316,14 @@ impl Cache {
             }
         }
         cache
+    }
+
+    pub fn check_for_deps(&self, deps: Vec<Dependency>, db: Database)
+    {
+        for dep in deps
+        {
+            
+        }
     }
 
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
