@@ -1,14 +1,15 @@
-use ar::Archive;
-use std::io::Read;
-use std::path::Path;
-use tar::Archive as TarArchive;
-use xz2::read::XzDecoder;
 use crate::package::Package;
-use std::path::PathBuf;
-use std::fs::File;
-use std::error::Error;
+use ar::Archive;
+use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use rpm::Package as RPMPackage;
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+use std::path::PathBuf;
+use tar::Archive as TarArchive;
+use xz2::read::XzDecoder;
 
 pub fn convert_deb_to_spm(deb_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
     let mut package = Package::new();
@@ -47,7 +48,7 @@ fn process_control_data(package: &mut Package, data: &[u8]) -> Result<(), Box<dy
         if entry.header().path()?.to_string_lossy() == "./control" {
             let mut control_content = String::new();
             entry.read_to_string(&mut control_content)?;
-            
+
             // Parse control file for package metadata
             for line in control_content.lines() {
                 if line.starts_with("Package: ") {
@@ -68,7 +69,7 @@ fn process_package_data(package: &mut Package, data: &[u8]) -> Result<(), Box<dy
     for entry in archive.entries()? {
         let mut entry = entry?;
         let mode = entry.header().mode()?;
-        
+
         let mut contents = Vec::new();
         entry.read_to_end(&mut contents)?;
 
@@ -81,7 +82,7 @@ fn process_package_data(package: &mut Package, data: &[u8]) -> Result<(), Box<dy
             entry.path()?.strip_prefix(".")?.to_path_buf(),
             mode as u32,
             contents,
-            None
+            None,
         );
     }
     Ok(())
@@ -97,9 +98,6 @@ pub fn _convert_rpm_to_spm(rpm_path: &Path, output_path: &Path) -> Result<(), Bo
     package.version = rpm_package.metadata.get_version().unwrap().to_string();
 
     // Process payload (TODO: is raw data of file in u8 bytes (entry = byte))
-    for _entry in rpm_package.content {
-        
-    }
 
     // Save as SPM package
     package.save_package(output_path)?;
@@ -133,7 +131,7 @@ pub fn convert_targz_to_spm(targz_path: &Path, output_path: &Path) -> Result<(),
         let mut entry = entry?;
         let path = entry.path()?.into_owned();
         let mode = entry.header().mode()?;
-        
+
         // Skip directories
         if entry.header().entry_type().is_dir() {
             continue;
@@ -142,12 +140,7 @@ pub fn convert_targz_to_spm(targz_path: &Path, output_path: &Path) -> Result<(),
         let mut contents = Vec::new();
         entry.read_to_end(&mut contents)?;
 
-        package.add_file(
-            path,
-            mode as u32,
-            contents,
-            None
-        );
+        package.add_file(path, mode as u32, contents, None);
     }
 
     package.save_package(output_path)?;
@@ -192,12 +185,49 @@ pub fn convert_zip_to_spm(zip_path: &Path, output_path: &Path) -> Result<(), Box
         // Use a default mode of 644 for files from ZIP since ZIP doesn't store Unix permissions
         let mode = 0o644;
 
-        package.add_file(
-            path,
-            mode,
-            contents,
-            None
-        );
+        package.add_file(path, mode, contents, None);
+    }
+
+    package.save_package(output_path)?;
+    Ok(())
+}
+
+pub fn convert_tarbz2_to_spm(tarbz2_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut package = Package::new();
+    let file = File::open(tarbz2_path)?;
+    let bz = BzDecoder::new(file);
+    let mut archive = TarArchive::new(bz);
+
+    // Try to get name/version from filename
+    if let Some(filename) = tarbz2_path.file_name() {
+        let filename = filename.to_string_lossy();
+        if let Some(name_end) = filename.find(".tar.bz2") {
+            let name = &filename[..name_end];
+            // Simple version extraction, could be made more sophisticated
+            if let Some(ver_idx) = name.rfind('-') {
+                package.name = name[..ver_idx].to_string();
+                package.version = name[ver_idx + 1..].to_string();
+            } else {
+                package.name = name.to_string();
+                package.version = "1.0.0".to_string();
+            }
+        }
+    }
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let mode = entry.header().mode()?;
+
+        // Skip directories
+        if entry.header().entry_type().is_dir() {
+            continue;
+        }
+
+        let mut contents = Vec::new();
+        entry.read_to_end(&mut contents)?;
+
+        package.add_file(path, mode as u32, contents, None);
     }
 
     package.save_package(output_path)?;
@@ -219,25 +249,36 @@ pub fn detect_file_type(path: &str) -> anyhow::Result<Option<String>> {
             "zip" => return Ok(Some("zip".to_string())),
             "gz" => {
                 // Check if it's a tar.gz
-                if path.to_str()
+                if path
+                    .to_str()
                     .map(|s| s.to_lowercase().ends_with(".tar.gz"))
-                    .unwrap_or(false) 
+                    .unwrap_or(false)
                 {
                     return Ok(Some("tar.gz".to_string()));
                 }
             }
+            "bz2" => {
+                // Check if it's a tar.bz2
+                if path
+                    .to_str()
+                    .map(|s| s.to_lowercase().ends_with(".tar.bz2"))
+                    .unwrap_or(false)
+                {
+                    return Ok(Some("tar.bz2".to_string()));
+                }
+            }
+
             _ => {}
         }
     }
-    
+
     Ok(None)
 }
 
-pub fn detect_file_type_a(path: &str) -> anyhow::Result<Option<String>>
-{
+pub fn detect_file_type_a(path: &str) -> anyhow::Result<Option<String>> {
     let mut file = File::open(path)?;
     let mut buffer = [0u8; 8]; // We'll read first 8 bytes
-    
+
     // Read the first few bytes of the file
     let bytes_read = file.read(&mut buffer)?;
     if bytes_read < 4 {
@@ -252,8 +293,12 @@ pub fn detect_file_type_a(path: &str) -> anyhow::Result<Option<String>>
 
     // Check for RPM package
     // RPM files start with 0xED 0xAB 0xEE 0xDB
-    if bytes_read >= 4 && buffer[0] == 0xED && buffer[1] == 0xAB && 
-       buffer[2] == 0xEE && buffer[3] == 0xDB {
+    if bytes_read >= 4
+        && buffer[0] == 0xED
+        && buffer[1] == 0xAB
+        && buffer[2] == 0xEE
+        && buffer[3] == 0xDB
+    {
         return Ok(Some("rpm".to_string()));
     }
 
@@ -265,11 +310,20 @@ pub fn detect_file_type_a(path: &str) -> anyhow::Result<Option<String>>
 
     // Check for ZIP
     // ZIP files start with "PK\x03\x04"
-    if bytes_read >= 4 && buffer[0] == 0x50 && buffer[1] == 0x4B && 
-       buffer[2] == 0x03 && buffer[3] == 0x04 {
+    if bytes_read >= 4
+        && buffer[0] == 0x50
+        && buffer[1] == 0x4B
+        && buffer[2] == 0x03
+        && buffer[3] == 0x04
+    {
         return Ok(Some("zip".to_string()));
+    }
+
+    // Check for bzip2 (including tar.bz2)
+    // Bzip2 files start with "BZh"
+    if bytes_read >= 3 && &buffer[0..3] == b"BZh" {
+        return Ok(Some("tar.bz2".to_string()));
     }
 
     Ok(None)
 }
- 

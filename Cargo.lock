@@ -2751,11 +2751,12 @@ dependencies = [
 
 [[package]]
 name = "spm"
-version = "3.12.22"
+version = "3.13.22"
 dependencies = [
  "anyhow",
  "ar",
  "base64 0.22.1",
+ "bzip2",
  "clap",
  "dirs",
  "fcntl",

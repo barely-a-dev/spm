@@ -1,6 +1,6 @@
 [package]
 name = "spm"
-version = "3.12.22"
+version = "3.13.22"
 edition = "2021"
 license = "GPL-3.0"
 
@@ -8,6 +8,7 @@ license = "GPL-3.0"
 anyhow = "1.0.93"
 ar = "0.9.0"
 base64 = "0.22.1"
+bzip2 = "0.4.4"
 clap = "4.5.21"
 dirs = "5.0.1"
 fcntl = "0.1.0"

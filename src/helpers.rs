@@ -408,6 +408,10 @@ pub fn get_matches(
                         }
                         Err(e) => {
                             eprintln!("Failed to install local package {}: {}", package, e);
+                            if e.to_string().contains("File exists")
+                            {
+                                println!("You probably installed the package with another package manager already.");
+                            }
                         }
                     }
                 } else {
@@ -430,6 +434,10 @@ pub fn get_matches(
                         }
                         Err(e) => {
                             eprintln!("Failed to install package {}: {}", package, e);
+                            if e.to_string().contains("File exists")
+                            {
+                                println!("You probably installed the package with another package manager already.");
+                            }
                         }
                     }
                 }
@@ -633,6 +641,8 @@ pub fn get_matches(
         let input_file = args.next().expect("Input file argument required");
         let output_file = args.next().expect("Output file argument required");
 
+        println!("Attempting to convert...");
+
         if let Err(e) = convert(input_file, output_file) {
             eprintln!("Failed to convert file: {}", e);
             process::exit(1);
@@ -778,6 +788,7 @@ fn convert(input: &str, output: &str) -> Result<(), Box<dyn Error>> {
             }
             "tar.gz" => convert_targz_to_spm(Path::new(input), Path::new(output))?,
             "zip" => convert_zip_to_spm(Path::new(input), Path::new(output))?,
+            "tar.bz2" => convert_tarbz2_to_spm(Path::new(input), Path::new(output))?,
             _ => return Err(format!("Unsupported file type: {}", file_type).into()),
         },
         None => return Err("Unable to detect file type".into()),
