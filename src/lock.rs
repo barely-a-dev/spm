@@ -1,6 +1,6 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Error, ErrorKind, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use nix::fcntl::{Flock, FlockArg};
 
@@ -15,7 +15,13 @@ impl Lock {
     }
 
     pub fn new_with_timeout(lock_type: &str, timeout: Duration) -> Result<Self, Error> {
-        let lockfile = PathBuf::from(format!("/var/lib/spm/spm{}.lock", lock_type));
+        let lockfile = PathBuf::from(format!("/var/lib/spm/spm-{}.lock", lock_type));
+
+        let par = PathBuf::from("/var/lib/spm");
+        if !par.exists()
+        {
+            fs::create_dir_all("/var/lib/spm")?;
+        }
         
         let mut file = OpenOptions::new()
             .write(true)
