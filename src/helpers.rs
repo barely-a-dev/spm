@@ -1,23 +1,25 @@
 use crate::conversion::detect_file_type;
+use crate::conversion::*;
 use crate::db::Cache;
 use crate::db::Database;
+use crate::db::FileState;
 use crate::handlers::*;
 use crate::lock::Lock;
 use crate::patch::Patch;
 use crate::Config;
+use crate::Security;
 use anyhow;
+use base64::Engine;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
 use std::io::stdin;
 use std::io::Read;
 use std::io::Write;
-//use std::time::Duration;
-use crate::conversion::*;
-use crate::Security;
 use std::process::exit;
 use std::{
+    collections::HashMap,
     error::Error,
-    fs,
+    fs::{self, File},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     process,
@@ -325,8 +327,8 @@ pub fn get_matches(
             process::exit(1);
         }
     } else if let Some(mut args) = matches.get_many::<String>("install-package") {
-        let (_, _cache_lock, _bin_lock) =
-            prefer_root("install a package", &matches, false, true, true);
+        let (_, _cache_lock, _bin_lock, _) =
+            prefer_root("install a package", &matches, false, true, true, false);
 
         let package_path = args.next().expect("Package file argument required");
         let target_dir = args.next().map(|s| s.as_str()); // Convert to Option<&str>
@@ -390,8 +392,8 @@ pub fn get_matches(
             }
         }
     } else if matches.contains_id("install") {
-        let (_lock, _cache_lock, _bin_lock) =
-            prefer_root("install packages", &matches, true, true, true);
+        let (_lock, _cache_lock, _bin_lock, _) =
+            prefer_root("install packages", &matches, true, true, true, false);
 
         if let Some(packages) = matches.get_many::<String>("install") {
             let (packages, vers) = split_values(packages);
@@ -432,7 +434,8 @@ pub fn get_matches(
                     let package = packages[i].as_str();
                     let version = vers.get(i).cloned();
 
-                    match download_and_install_package(package, database, cache, &version, &client) {
+                    match download_and_install_package(package, database, cache, &version, &client)
+                    {
                         Ok(_) => {
                             success_count += 1;
                         }
@@ -462,8 +465,8 @@ pub fn get_matches(
             download(&database, p, o, &req_ver, None).expect("Failed to download package.");
         }
     } else if matches.contains_id("update") {
-        let (_lock, _cache_lock, _bin_lock) =
-            prefer_root("update packages", &matches, true, true, true);
+        let (_lock, _cache_lock, _bin_lock, _) =
+            prefer_root("update packages", &matches, true, true, true, false);
 
         // Verify network is enabled
         if !config
@@ -508,7 +511,13 @@ pub fn get_matches(
                         }
                     }
 
-                    match download_and_install_package(name, database, cache, &database.get_recent(&name), &client) {
+                    match download_and_install_package(
+                        name,
+                        database,
+                        cache,
+                        &database.get_recent(&name),
+                        &client,
+                    ) {
                         Ok(_) => {
                             println!("Successfully updated {}", package_name);
                             updated = true;
@@ -540,7 +549,13 @@ pub fn get_matches(
             let total_updates = updates.len();
 
             for (name, _, _) in updates {
-                match download_and_install_package(&name, database, cache, &database.get_recent(&name), &client) {
+                match download_and_install_package(
+                    &name,
+                    database,
+                    cache,
+                    &database.get_recent(&name),
+                    &client,
+                ) {
                     Ok(_) => {
                         success_count += 1;
                     }
@@ -575,21 +590,24 @@ pub fn get_matches(
         println!("Database updated successfully");
         process::exit(0);
     } else if let Some(package_file) = matches.get_one::<String>("publish") {
+        let (_, _, _, _token_lock) =
+            prefer_root("publish a package", &matches, false, false, false, true);
         if let Err(e) = handle_publish_package(package_file, &database, config) {
             eprintln!("Failed to publish package: {}", e);
             process::exit(1);
         }
     } else if let Some(package_file) = matches.get_one::<String>("unpublish") {
+        let (_, _, _, _token_lock) =
+        prefer_root("unpublish a package", &matches, false, false, false, true);
         if let Err(e) = handle_remove_package(package_file, &database, config) {
             eprintln!("Failed to remove package: {}", e);
             process::exit(1);
         }
     } else if let Some(packages) = matches.get_many::<String>("uninstall") {
-        let (_lock, _cache_lock, _bin_lock) =
-            prefer_root("uninstall packages", &matches, true, true, true);
+        let (_lock, _cache_lock, _bin_lock, _) =
+            prefer_root("uninstall packages", &matches, true, true, true, false);
 
-        for package in packages
-        {
+        for package in packages {
             if let Err(e) = handle_uninstall_package(package, cache) {
                 eprintln!("Failed to uninstall package: {}", e);
                 process::exit(1);
@@ -656,15 +674,14 @@ pub fn get_matches(
         }
         println!("File converted successfully");
     } else if let Some(output) = matches.get_one::<String>("mirror-repo") {
-        let (_lock, _, _) = prefer_root("install packages", &matches, true, false, false);
+        let (_lock, _, _, _) = prefer_root("mirror the repository", &matches, true, false, false, false);
         database.update_db().expect("Failed to update databse");
         let packages = database
             .list_all()
             .expect("Failed to retrieve package list");
 
         for pack in packages {
-            for ver in database.get_vers(&pack)
-            {
+            for ver in database.get_vers(&pack) {
                 let mut current_out = output.clone();
                 current_out.push_str(&pack);
                 match download(database, &pack, &current_out, &Some(ver), None) {
@@ -735,10 +752,12 @@ fn prefer_root(
     lock_db: bool,
     lock_cache: bool,
     lock_bin: bool,
-) -> (Option<Lock>, Option<Lock>, Option<Lock>) {
+    lock_token: bool,
+) -> (Option<Lock>, Option<Lock>, Option<Lock>, Option<Lock>) {
     let mut db_lock = None;
     let mut cache_lock = None;
     let mut bin_lock = None;
+    let mut token_lock = None;
 
     if !is_root() {
         if !prompt_non_root_confirmation(matches.get_flag("force-op"), operation) {
@@ -757,9 +776,14 @@ fn prefer_root(
         if lock_bin {
             bin_lock = Some(Lock::new("bin").expect("Failed to lock binary"));
         }
+
+        if lock_token
+        {
+            token_lock = Some(Lock::new("token").expect("Failed to lock token"));
+        }
     }
 
-    (db_lock, cache_lock, bin_lock)
+    (db_lock, cache_lock, bin_lock, token_lock)
 }
 
 fn download(
@@ -783,7 +807,6 @@ fn download(
         println!("Package {} not found.", package_name);
         exit(1);
     }
-
 
     let version = if let Some(v) = req_ver {
         v
@@ -923,10 +946,108 @@ pub fn validate_token(token: &String) -> anyhow::Result<&str> {
     Ok("Valid token")
 }
 
-pub fn format_f(filename: &str, ver: &Option<String>) -> String {
+pub fn format_f(filename: &str, database: &Database, ver: &Option<String>) -> String {
     remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
         .trim_end_matches(".spm")
         .to_owned()
         + "%26"
-        + ver.as_ref().unwrap()
+        + ver.as_ref().unwrap_or(&database.get_recent(filename).unwrap_or("None".into()))
+}
+
+// Helper functions for serialization/deserialization
+pub fn parse_file_list(data: &str) -> Vec<String> {
+    data.trim_matches(|c| c == '[' || c == ']')
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .collect()
+}
+
+pub fn parse_file_states(data: &str) -> HashMap<String, FileState> {
+    let mut states = HashMap::new();
+    if data.is_empty() {
+        return states;
+    }
+
+    // Remove the outer brackets
+    let content = data.trim_matches(|c| c == '[' || c == ']');
+
+    // Split by semicolon to get individual file entries
+    for entry in content.split(';') {
+        if entry.is_empty() {
+            continue;
+        }
+
+        // Find the position of the opening brace
+        if let Some(brace_pos) = entry.find('{') {
+            let path = entry[..brace_pos].to_string();
+            let state_data = &entry[brace_pos + 1..entry.len() - 1];
+
+            // Split the content and permissions
+            let parts: Vec<&str> = state_data.split(',').collect();
+
+            let content = if !parts[0].is_empty() {
+                base64::engine::general_purpose::STANDARD
+                    .decode(parts[0])
+                    .ok()
+            } else {
+                None
+            };
+
+            let permissions = if parts.len() > 1 && !parts[1].is_empty() {
+                parts[1].parse().ok()
+            } else {
+                None
+            };
+
+            states.insert(
+                path,
+                FileState {
+                    content,
+                    permissions,
+                },
+            );
+        }
+    }
+
+    states
+}
+
+pub fn write_file_list(file: &mut File, files: &[String]) -> Result<(), Box<dyn Error>> {
+    write!(file, "[")?;
+    for (i, path) in files.iter().enumerate() {
+        if i > 0 {
+            write!(file, ",")?;
+        }
+        write!(file, "\"{}\"", path)?;
+    }
+    write!(file, "]")?;
+    Ok(())
+}
+
+pub fn write_file_states(
+    file: &mut File,
+    states: &HashMap<String, FileState>,
+) -> Result<(), Box<dyn Error>> {
+    write!(file, "[")?;
+    for (i, (path, state)) in states.iter().enumerate() {
+        if i > 0 {
+            write!(file, ";")?;
+        }
+        write!(file, "{}{{", path)?;
+        if let Some(content) = &state.content {
+            write!(
+                file,
+                "{},",
+                base64::engine::general_purpose::STANDARD.encode(content)
+            )?;
+        } else {
+            write!(file, ",")?;
+        }
+        if let Some(perms) = state.permissions {
+            write!(file, "{}", perms)?;
+        }
+        write!(file, "}}")?;
+    }
+    write!(file, "]")?;
+    Ok(())
 }

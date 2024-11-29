@@ -1,5 +1,6 @@
 use crate::lock::Lock;
 use crate::package;
+use crate::helpers::*;
 use base64::Engine;
 use package::Dependency;
 use reqwest;
@@ -120,7 +121,7 @@ impl Database {
                     let package_name = name.trim_end_matches(".spm");
                     let package_info: Vec<&str> = package_name.split('&').collect();
                     if package_info.len() != 2 {
-                        println!("Invalid package string, \"{name}\" skipping.");
+                        println!("Invalid package string, \"{name}\", skipping.");
                         continue;
                     }
                     let package_name = package_info[0];
@@ -523,102 +524,4 @@ impl Cache {
     pub fn remove(&mut self, name: &str) -> Option<PackageState> {
         self.packages.remove(name)
     }
-}
-
-// Helper functions for serialization/deserialization
-fn parse_file_list(data: &str) -> Vec<String> {
-    data.trim_matches(|c| c == '[' || c == ']')
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').to_string())
-        .collect()
-}
-
-fn parse_file_states(data: &str) -> HashMap<String, FileState> {
-    let mut states = HashMap::new();
-    if data.is_empty() {
-        return states;
-    }
-
-    // Remove the outer brackets
-    let content = data.trim_matches(|c| c == '[' || c == ']');
-
-    // Split by semicolon to get individual file entries
-    for entry in content.split(';') {
-        if entry.is_empty() {
-            continue;
-        }
-
-        // Find the position of the opening brace
-        if let Some(brace_pos) = entry.find('{') {
-            let path = entry[..brace_pos].to_string();
-            let state_data = &entry[brace_pos + 1..entry.len() - 1];
-
-            // Split the content and permissions
-            let parts: Vec<&str> = state_data.split(',').collect();
-
-            let content = if !parts[0].is_empty() {
-                base64::engine::general_purpose::STANDARD
-                    .decode(parts[0])
-                    .ok()
-            } else {
-                None
-            };
-
-            let permissions = if parts.len() > 1 && !parts[1].is_empty() {
-                parts[1].parse().ok()
-            } else {
-                None
-            };
-
-            states.insert(
-                path,
-                FileState {
-                    content,
-                    permissions,
-                },
-            );
-        }
-    }
-
-    states
-}
-
-fn write_file_list(file: &mut File, files: &[String]) -> Result<(), Box<dyn Error>> {
-    write!(file, "[")?;
-    for (i, path) in files.iter().enumerate() {
-        if i > 0 {
-            write!(file, ",")?;
-        }
-        write!(file, "\"{}\"", path)?;
-    }
-    write!(file, "]")?;
-    Ok(())
-}
-
-fn write_file_states(
-    file: &mut File,
-    states: &HashMap<String, FileState>,
-) -> Result<(), Box<dyn Error>> {
-    write!(file, "[")?;
-    for (i, (path, state)) in states.iter().enumerate() {
-        if i > 0 {
-            write!(file, ";")?;
-        }
-        write!(file, "{}{{", path)?;
-        if let Some(content) = &state.content {
-            write!(
-                file,
-                "{},",
-                base64::engine::general_purpose::STANDARD.encode(content)
-            )?;
-        } else {
-            write!(file, ",")?;
-        }
-        if let Some(perms) = state.permissions {
-            write!(file, "{}", perms)?;
-        }
-        write!(file, "}}")?;
-    }
-    write!(file, "]")?;
-    Ok(())
 }

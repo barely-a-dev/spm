@@ -10,15 +10,18 @@ use crate::PackageConfig;
 use base64::engine::general_purpose;
 use base64::Engine;
 use indicatif::{ProgressBar, ProgressStyle};
+use reqwest::blocking::Response;
+use reqwest::StatusCode;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::stdin;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::{
     error::Error,
     fs::{self, File},
     path::{Path, PathBuf},
-    process::exit
+    process::exit,
 };
 use uuid::Uuid;
 
@@ -110,7 +113,14 @@ pub fn handle_package_file(
             package.version = version;
         } else {
             let (_, versionp) = parse_name_and_version(output_file);
-            package.version = versionp.unwrap_or_else(|| "1.0.0".to_string());
+            if let Some(v) = versionp {
+                package.version = v;
+            } else {
+                println!("No version found. Please enter the package version:");
+                let mut buf = "".to_string();
+                stdin().read_line(&mut buf)?;
+                package.version = buf.to_string();
+            }
         }
     }
 
@@ -185,16 +195,21 @@ pub fn handle_package_file_atomic(
     };
 
     // Handle versioning
-    if ver.is_none() {
-        package.version = "1.0.0".to_string();
-    } else if ver.is_some() {
+    if ver.is_some() {
         package.version = ver.clone().unwrap_or("0.0.0".to_string());
     } else if !allow_empty_ver {
         if let Some(version) = parsed_version {
             package.version = version;
         } else {
             let (_, versionp) = parse_name_and_version(output_file);
-            package.version = versionp.unwrap_or_else(|| "1.0.0".to_string());
+            if let Some(v) = versionp {
+                package.version = v;
+            } else {
+                println!("No version found. Please enter the package version:");
+                let mut buf = "".to_string();
+                stdin().read_line(&mut buf)?;
+                package.version = buf.to_string();
+            }
         }
     }
 
@@ -556,7 +571,7 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}",
                 owner,
                 repo,
-                helpers::format_f(&filename, &ver)
+                helpers::format_f(&filename, database, &ver)
             );
             println!("Up: {}", upload_url);
 
@@ -596,17 +611,11 @@ pub fn handle_publish_package(
 
             if !stat.is_success() {
                 let error_body = &response.text()?;
-                if error_body.contains("too large")
-                {
+                if error_body.contains("too large") {
                     println!("Error contains too large. Please directly contact SPM's maintainer to publish packages over 50MB in size. Packages over 100MB can not yet be published as, well, I can't afford a server so I have to rely on GH.");
                     exit(1);
                 }
-                return Err(format!(
-                    "Failed to publish package: {} - {}",
-                    stat,
-                    error_body
-                )
-                .into());
+                return Err(format!("Failed to publish package: {} - {}", stat, error_body).into());
             } else {
                 // Upload the recent version file
                 let ver_upload_url = format!(
@@ -703,7 +712,7 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}",
                 owner,
                 repo,
-                helpers::format_f(&filename, &ver)
+                helpers::format_f(&filename, database, &ver)
             );
 
             let mut commit_data = HashMap::new();
@@ -874,45 +883,66 @@ pub fn handle_remove_package(
 
     match permission_level {
         "admin" | "write" => {
-            // Direct removal flow
-            let file_url = format!(
-                "https://api.github.com/repos/{}/{}/contents/{}",
-                owner, repo, file_path
-            );
+            let mut errs: Vec<&str> = vec![];
+            let mut delete_response_succ: bool = true;
+            let mut delete_response: Option<Response> = None;
 
-            // Get file SHA
-            let file_response = client
-                .get(&file_url)
-                .header("Authorization", format!("token {}", token))
-                .header("User-Agent", "spm-client")
-                .send()?;
+            for version in database.get_vers(&file_path) {
+                // Direct removal flow
+                let file_url = format!(
+                    "https://api.github.com/repos/{}/{}/contents/{}",
+                    owner,
+                    repo,
+                    helpers::format_f(&file_path, database, &Some(version)),
+                );
 
-            if !file_response.status().is_success() {
-                return Err("Package not found in repository".into());
+                // Get file SHA
+                let file_response = client
+                    .get(&file_url)
+                    .header("Authorization", format!("token {}", token))
+                    .header("User-Agent", "spm-client")
+                    .send()?;
+
+                if !file_response.status().is_success() {
+                    errs.push("Package not found in repository".into());
+                    continue;
+                }
+
+                let file_info: Value = file_response.json()?;
+                let file_sha = file_info["sha"].as_str().ok_or("Unable to get file SHA")?;
+
+                // Delete file
+                let mut delete_data = HashMap::new();
+                delete_data.insert(
+                    "message",
+                    format!(
+                        "{{SPM_REM_SYS}} Remove package {} by {}",
+                        package_name, username
+                    ),
+                );
+                delete_data.insert("sha", file_sha.to_string());
+
+                let loc_delete_response = client
+                    .delete(&file_url)
+                    .header("Authorization", format!("token {}", token))
+                    .header("User-Agent", "spm-client")
+                    .json(&delete_data)
+                    .send()?;
+                delete_response_succ =
+                    delete_response_succ && loc_delete_response.status().is_success();
+                delete_response = Some(loc_delete_response);
             }
 
-            let file_info: Value = file_response.json()?;
-            let file_sha = file_info["sha"].as_str().ok_or("Unable to get file SHA")?;
+            if errs.len() > 0
+            {
+                println!("Errors occurred during deletions:");
+                for err in errs
+                {
+                    println!("\t{err}");
+                }
+            }
 
-            // Delete file
-            let mut delete_data = HashMap::new();
-            delete_data.insert(
-                "message",
-                format!(
-                    "{{SPM_REM_SYS}} Remove package {} by {}",
-                    package_name, username
-                ),
-            );
-            delete_data.insert("sha", file_sha.to_string());
-
-            let delete_response = client
-                .delete(&file_url)
-                .header("Authorization", format!("token {}", token))
-                .header("User-Agent", "spm-client")
-                .json(&delete_data)
-                .send()?;
-
-            if delete_response.status().is_success() {
+            if delete_response_succ {
                 // Also delete the version file
                 let ver_file_url = format!(
                     "https://api.github.com/repos/{}/{}/contents/{}.ver",
@@ -952,7 +982,13 @@ pub fn handle_remove_package(
                 println!("Package and version file removed successfully!");
                 Ok(())
             } else {
-                Err(format!("Failed to remove package: {}", delete_response.status()).into())
+                Err(format!(
+                    "Failed to remove package: {}",
+                    delete_response
+                        .map(|s| s.status())
+                        .unwrap_or(StatusCode::from_u16(593).unwrap_or_default())
+                )
+                .into())
             }
         }
         "read" | "pull" => {

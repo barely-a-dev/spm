@@ -2751,7 +2751,7 @@ dependencies = [
 
 [[package]]
 name = "spm"
-version = "3.14.24"
+version = "3.14.25"
 dependencies = [
  "anyhow",
  "ar",
