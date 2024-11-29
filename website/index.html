@@ -4,119 +4,194 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SPM - A powerful yet lightweight package manager for modern development">
+    <meta name="keywords" content="package manager, SPM, software management, development tools">
     <title>SPM - Simple Package Manager</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        
         :root {
             --primary: #2d333b;
+            --primary-light: #363c44;
+            --primary-dark: #252b33;
             --secondary: #22272e;
             --text: #adbac7;
+            --text-light: #cbd4dc;
             --accent: #539bf5;
+            --accent-light: #68a7f8;
             --success: #347d39;
             --warning: #c69026;
+            --error: #e5534b;
+            --gradient-primary: linear-gradient(135deg, var(--primary-light), var(--primary-dark));
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --transition-speed: 0.3s;
+        }
+
+        
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         html {
             scroll-behavior: smooth;
+            font-size: 16px;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             line-height: 1.6;
-            margin: 0;
-            padding: 0;
             background: var(--primary);
             color: var(--text);
+            overflow-x: hidden;
         }
 
+        
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 2rem;
+            position: relative;
         }
 
+        
         header {
-            background: var(--secondary);
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            background: var(--gradient-primary);
+            padding: 1.5rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
         }
 
-        header .container {
+        .search-results {
+            position: absolute;
+            top: calc(100% + 5px);
+            
+            left: 0;
+            right: 0;
+            background: var(--secondary);
+            border-radius: 8px;
+            margin-top: 0.5rem;
+            box-shadow: var(--box-shadow);
+            z-index: 1000;
+            max-height: 400px;
+            
+            overflow-y: auto;
+            
+        }
+
+
+        .search-result {
+            padding: 1rem;
+            border-bottom: 1px solid var(--primary);
+            cursor: pointer;
+            transition: background var(--transition-speed);
+        }
+
+        .search-result:hover {
+            background: var(--primary-light);
+        }
+
+        .search-result:last-child {
+            border-bottom: none;
+        }
+
+
+        .header-content {
             display: flex;
             justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background: var(--accent);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+        }
+
+        
+        nav {
+            display: flex;
+            gap: 2rem;
             align-items: center;
         }
 
         nav a {
             color: var(--text);
             text-decoration: none;
-            margin-left: 2rem;
-            transition: color 0.3s;
-        }
-
-        nav a:hover {
-            color: var(--accent);
-        }
-
-        h1,
-        h2,
-        h3 {
-            color: #fff;
-        }
-
-        .version {
-            color: var(--accent);
-            font-size: 0.9rem;
-            padding: 0.3rem 0.8rem;
-            background: rgba(83, 155, 245, 0.1);
-            border-radius: 20px;
-        }
-
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1.5rem;
-            margin: 2rem 0;
-        }
-
-        .feature-card {
-            background: var(--secondary);
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-5px);
-        }
-
-        code {
-            background: #1b1f24;
-            padding: 0.2rem 0.4rem;
-            border-radius: 4px;
-            font-family: 'JetBrains Mono', 'Courier New', monospace;
-        }
-
-        .installation {
-            background: var(--secondary);
-            padding: 2rem;
-            border-radius: 12px;
-            margin: 2rem 0;
-        }
-
-        .cmd {
-            background: #1b1f24;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all var(--transition-speed);
             position: relative;
         }
 
-        .cmd::before {
-            content: '$';
-            color: var(--accent);
-            margin-right: 1rem;
+        nav a::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 2px;
+            background: var(--accent);
+            transition: all var(--transition-speed);
+            transform: translateX(-50%);
+        }
+
+        nav a:hover::after {
+            width: 100%;
+        }
+
+        
+        .feature-card {
+            background: var(--secondary);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: var(--box-shadow);
+            transition: all var(--transition-speed);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--accent);
+            transform: scaleX(0);
+            transition: transform var(--transition-speed);
+        }
+
+        .feature-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        
+        .cmd {
+            background: var(--primary-dark);
+            padding: 1.5rem;
+            border-radius: 8px;
+            position: relative;
+            font-family: 'JetBrains Mono', monospace;
+            border-left: 4px solid var(--accent);
         }
 
         .copy-btn {
@@ -125,277 +200,401 @@
             top: 50%;
             transform: translateY(-50%);
             background: var(--accent);
-            border: none;
             color: white;
-            padding: 0.3rem 0.8rem;
+            border: none;
+            padding: 0.5rem 1rem;
             border-radius: 4px;
             cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .cmd:hover .copy-btn {
-            opacity: 1;
-        }
-
-        .tabs {
+            transition: all var(--transition-speed);
             display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .copy-btn:hover {
+            background: var(--accent-light);
+        }
+
+        
+        .search-bar {
+            background: var(--primary-dark);
+            padding: 1rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
             margin: 2rem 0;
-            border-bottom: 2px solid var(--secondary);
         }
 
-        .tab {
-            padding: 1rem 2rem;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
+        .search-input {
+            background: transparent;
+            border: none;
+            color: var(--text);
+            flex: 1;
+            font-size: 1rem;
+            outline: none;
         }
 
-        .tab.active {
-            border-bottom-color: var(--accent);
-            color: var(--accent);
+        .statistics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin: 2rem 0;
         }
 
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        footer {
+        .stat-card {
             background: var(--secondary);
-            padding: 2rem 0;
-            margin-top: 4rem;
+            padding: 1.5rem;
+            border-radius: 8px;
             text-align: center;
         }
 
+        .stat-number {
+            font-size: 2rem;
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        
+        @media (max-width: 1024px) {
+            .statistics {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
         @media (max-width: 768px) {
-            header .container {
+            .header-content {
                 flex-direction: column;
-                text-align: center;
-            }
-
-            nav {
-                margin-top: 1rem;
-            }
-
-            nav a {
-                margin: 0 1rem;
-            }
-
-            .features {
-                grid-template-columns: 1fr;
                 gap: 1rem;
             }
 
-            .feature-card {
-                padding: 1rem;
+            nav {
+                flex-wrap: wrap;
+                justify-content: center;
             }
 
-            .quick-install {
-                position: relative;
-                padding: 1rem 0;
-            }
-
-            .quick-install .cmd {
-                padding: 1rem;
-                padding-right: 5rem;
-                /* Make space for the button */
-                word-break: break-all;
-                /* Allow text to wrap */
-            }
-
-            .quick-install .copy-btn {
-                opacity: 1;
-                /* Always show button on mobile */
-                right: 0.5rem;
+            .statistics {
+                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 
 <body>
+    
     <header>
-        <div class="container">
-            <div>
-                <h1>SPM - Simple Package Manager</h1>
-                <span class="version">Version 2.5.18</span>
+        <div class="container header-content">
+            <div class="logo-container">
+                <div class="logo">SPM</div>
+                <div>
+                    <h1>Simple Package Manager</h1>
+                    <span class="version">Version 3.14.27</span>
+                </div>
             </div>
             <nav>
-                <a href="#features">Features</a>
-                <a href="#installation">Installation</a>
-                <a href="#documentation">Documentation</a>
-                <a href="https://github.com/barely-a-dev/spm_repo">GitHub</a>
+                <a href="#features"><i class="fas fa-cube"></i> Features</a>
+                <a href="#installation"><i class="fas fa-download"></i> Installation</a>
+                <a href="#documentation"><i class="fas fa-book"></i> Docs</a>
+                <a href="https://github.com/barely-a-dev/spm"><i class="fab fa-github"></i> GitHub</a>
             </nav>
         </div>
     </header>
 
     <main class="container">
-        <p class="intro">
-            SPM is a powerful yet lightweight package manager that simplifies distribution and installation.
-            With support for both local and remote packages, version control, and secure package management,
-            SPM makes it easy to manage your software ecosystem.
-        </p>
-
-        <h3>Quick Install</h3>
-        <div class="quick-install">
-            <code
-                class="cmd">curl -sSL https://raw.githubusercontent.com/barely-a-dev/spm_repo/master/install.sh | sudo bash</code>
-            <button class="copy-btn">Copy</button>
-        </div>
-
-        <div id="features" class="features">
-            <div class="feature-card">
-                <h3>📦 Package Management</h3>
-                <p>Create, install, and manage packages with simple commands. Supports both local and remote packages
-                    through GitHub repositories.</p>
-                <ul>
-                    <li>Local package creation</li>
-                    <li>Remote package installation</li>
-                    <li>Version tracking</li>
-                </ul>
-            </div>
-
-            <div class="feature-card">
-                <h3>🔄 Update System</h3>
-                <p>Keep your system up to date with automated package updates and version checking.</p>
-                <ul>
-                    <li>Automatic updates</li>
-                    <li>Version comparison</li>
-                    <li>Dependency tracking</li>
-                </ul>
-            </div>
-
-            <div class="feature-card">
-                <h3>🔒 Security</h3>
-                <p>Enhanced security features ensure safe package operations and system integrity.</p>
-                <ul>
-                    <li>Permission management</li>
-                    <li>Root privilege handling</li>
-                    <li>Secure package verification</li>
-                </ul>
-            </div>
-
-            <div class="feature-card">
-                <h3>🛠️ Developer Tools</h3>
-                <p>Comprehensive tools for package development and maintenance.</p>
-                <ul>
-                    <li>Package creation utilities</li>
-                    <li>Publishing tools</li>
-                    <li>Development workflows</li>
-                </ul>
+        
+        <div class="search-container" style="position: relative;">
+            <div class="search-bar">
+                <i class="fas fa-search"></i>
+                <input type="text" class="search-input" placeholder="Search packages...">
             </div>
         </div>
 
-        <div id="installation" class="installation">
-            <h2>Quick Start Guide</h2>
 
-            <div class="tabs">
-                <div class="tab active" data-tab="install">Installation</div>
-                <div class="tab" data-tab="create">Create Package</div>
-                <div class="tab" data-tab="publish">Publish</div>
+        
+        <div class="statistics">
+            <div class="stat-card">
+                <div class="stat-number">PLACEHOLDER</div>
+                <div>Total Packages</div>
             </div>
-
-            <div class="tab-content active" data-tab="install">
-                <p>Install a package from the repository:</p>
-                <div class="cmd">
-                    sudo spm -I package_name
-                    <button class="copy-btn">Copy</button>
-                </div>
-
-                <p>Update package database:</p>
-                <div class="cmd">
-                    sudo spm -u
-                    <button class="copy-btn">Copy</button>
-                </div>
+            <div class="stat-card">
+                <div class="stat-number">PLACEHOLDER</div>
+                <div>Downloads</div>
             </div>
-
-            <div class="tab-content" data-tab="create">
-                <p>Create a package from a directory:</p>
-                <div class="cmd">
-                    spm -P source_dir output.spm
-                    <button class="copy-btn">Copy</button>
-                </div>
-
-                <p>Create a package from a single file:</p>
-                <div class="cmd">
-                    spm -f input_file output.spm
-                    <button class="copy-btn">Copy</button>
-                </div>
+            <div class="stat-card">
+                <div class="stat-number">PLACEHOLDER</div>
+                <div>Contributors</div>
             </div>
-
-            <div class="tab-content" data-tab="publish">
-                <p>Publish a package to the repository:</p>
-                <div class="cmd">
-                    spm -b package.spm
-                    <button class="copy-btn">Copy</button>
-                </div>
+            <div class="stat-card">
+                <div class="stat-number">PLACEHOLDER</div>
+                <div>Active Users</div>
             </div>
         </div>
+        
+        <section id="features" class="fade-in">
+            <h2>Key Features</h2>
+            <div class="feature-grid"
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                <div class="feature-card">
+                    <i class="fas fa-bolt" style="color: var(--accent); font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <h3>Lightning Fast</h3>
+                    <p>Rapid and convenient package installation system.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-shield-alt"
+                        style="color: var(--accent); font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <h3>Secure by Default</h3>
+                    <p>Built-in security checks and package verification for safer packages.</p>
+                </div>
+                <!-- <div class="feature-card">
+                    <i class="fas fa-code-branch"
+                        style="color: var(--accent); font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <h3>Smart Dependencies</h3>
+                    <p>Intelligent dependency management with automatic conflict resolution.</p>
+                </div> -->
+            </div>
 
-        <div id="documentation" class="documentation">
-            <h2>Documentation</h2>
-            <p>
-                For complete documentation, examples, and best practices, visit our
-                <a href="https://github.com/barely-a-dev/spm" style="color: var(--accent);">GitHub repository</a>.
-            </p>
-        </div>
+            
+            <section id="installation" class="fade-in">
+                <h2>Quick Installation</h2>
+                <div class="cmd">
+                    $ curl -sSL https://raw.githubusercontent.com/barely-a-dev/spm/master/install.sh | sudo bash
+                    <button class="copy-btn"><i class="fas fa-copy"></i> Copy</button>
+                </div>
+
+                <h3 style="margin: 2rem 0 1rem;">Verify Installation</h3>
+                <div class="cmd">
+                    $ spm --version
+                    <button class="copy-btn"><i class="fas fa-copy"></i> Copy</button>
+                </div>
+            </section>
+
+            
+            <section id="documentation" class="fade-in">
+                <h2>Getting Started</h2>
+                <div class="feature-card">
+                    <h3>Common Commands</h3>
+                    <div style="display: grid; gap: 1rem;">
+                        <div class="cmd">
+                            $ spm -I &lt;package-names&gt;
+                            <button class="copy-btn"><i class="fas fa-copy"></i> Copy</button>
+                        </div>
+                        <div class="cmd">
+                            $ spm -U [package-names]
+                            <button class="copy-btn"><i class="fas fa-copy"></i> Copy</button>
+                        </div>
+                        <div class="cmd">
+                            $ spm -s [query]
+                            <button class="copy-btn"><i class="fas fa-copy"></i> Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
     </main>
 
-    <footer>
-        <div class="container">
-            <p>SPM is open source software. Contributions are welcome!</p>
-            <p>Licensed under GPL 3.0 License</p>
-        </div>
-    </footer>
-
     <script>
-        // Tab functionality
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                const tabId = tab.getAttribute('data-tab');
+        document.addEventListener('DOMContentLoaded', () => {
+            // Intersection Observer for animations
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('fade-in');
+                    }
+                });
+            }, { threshold: 0.1 });
 
-                // Update tabs
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
+            // Observe all feature cards
+            document.querySelectorAll('.feature-card').forEach(card => {
+                observer.observe(card);
+            });
 
-                // Update content
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active');
-                    if (content.getAttribute('data-tab') === tabId) {
-                        content.classList.add('active');
+            // Enhanced copy functionality
+            document.querySelectorAll('.copy-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const command = btn.parentElement.textContent.trim().replace('Copy', '');
+                    try {
+                        await navigator.clipboard.writeText(command);
+                        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                        setTimeout(() => {
+                            btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+                        }, 2000);
+                    } catch (err) {
+                        btn.innerHTML = '<i class="fas fa-times"></i> Failed!';
+                        setTimeout(() => {
+                            btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+                        }, 2000);
                     }
                 });
             });
-            tab.setAttribute('tabindex', '0');
-            tab.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    tab.click();
+
+            const searchInput = document.querySelector('.search-input');
+            let searchTimeout = null;
+
+            searchInput.addEventListener('input', async (e) => {
+                const query = e.target.value.trim().toLowerCase();
+                if (query.length < 2) {
+                    const existingResults = document.querySelector('.search-results');
+                    if (existingResults) existingResults.remove();
+                    return;
                 }
+
+                // Clear previous timeout
+                if (searchTimeout) clearTimeout(searchTimeout);
+
+                // Set new timeout to prevent too many API calls
+                searchTimeout = setTimeout(async () => {
+                    try {
+                        // Fetch repository contents
+                        const response = await fetch('https://api.github.com/repos/barely-a-dev/spm_repo/contents');
+                        const files = await response.json();
+
+                        // Process files to find packages
+                        const packages = new Map(); // Use Map to store unique packages
+
+                        // First pass: collect all .ver files and their contents
+                        const verFiles = files.filter(file => file.name.endsWith('.ver'));
+                        const verVersions = new Map();
+
+                        for (const verFile of verFiles) {
+                            const pkgName = verFile.name.replace('.ver', '');
+                            const versionResponse = await fetch(verFile.download_url);
+                            const version = await versionResponse.text();
+                            verVersions.set(pkgName, version.trim());
+                        }
+
+                        // Second pass: process package files
+                        files.forEach(file => {
+                            if (file.name.endsWith('.ver')) return; // Skip .ver files
+
+                            // Try to parse package name and version
+                            const match = file.name.match(/^([^&]+)&(.+)$/);
+                            if (match) {
+                                const [, name, version] = match;
+                                if (name.toLowerCase().includes(query)) {
+                                    packages.set(name, {
+                                        name,
+                                        version,
+                                        status: verVersions.has(name) ? 'valid' : 'no-ver-file'
+                                    });
+                                }
+                            } else {
+                                // Handle files without version in filename
+                                const name = file.name;
+                                if (name.toLowerCase().includes(query)) {
+                                    packages.set(name, {
+                                        name,
+                                        version: 'unknown',
+                                        status: 'invalid-format'
+                                    });
+                                }
+                            }
+                        });
+
+                        // Convert packages Map to array and sort by status and name
+                        const results = Array.from(packages.values())
+                            .sort((a, b) => {
+                                // Sort valid packages first
+                                if (a.status === 'valid' && b.status !== 'valid') return -1;
+                                if (a.status !== 'valid' && b.status === 'valid') return 1;
+                                return a.name.localeCompare(b.name);
+                            });
+
+                        // Update UI with search results
+                        const resultsContainer = document.createElement('div');
+                        resultsContainer.className = 'search-results';
+
+                        resultsContainer.innerHTML = results.map(pkg => `
+                <div class="search-result" style="border-left: 4px solid ${getStatusColor(pkg.status)}">
+                    <h4>${pkg.name}</h4>
+                    <p>Version: ${pkg.version}</p>
+                    ${pkg.status !== 'valid' ? `<p style="color: var(--warning);">${getStatusMessage(pkg.status)}</p>` : ''}
+                </div>
+            `).join('');
+
+                        // Replace existing results if any
+                        const existingResults = document.querySelector('.search-results');
+                        if (existingResults) {
+                            existingResults.remove();
+                        }
+                        searchInput.parentElement.parentElement.appendChild(resultsContainer);
+                    } catch (error) {
+                        console.error('Search failed:', error);
+                    }
+                }, 300); // Debounce time of 300ms
             });
+
+            // Helper functions
+            function getStatusColor(status) {
+                switch (status) {
+                    case 'valid': return 'var(--success)';
+                    case 'no-ver-file': return 'var(--warning)';
+                    case 'invalid-format': return 'var(--error)';
+                    default: return 'var(--text)';
+                }
+            }
+
+            function getStatusMessage(status) {
+                switch (status) {
+                    case 'no-ver-file': return 'Missing version file';
+                    case 'invalid-format': return 'Invalid package format';
+                    default: return '';
+                }
+            }
+        });
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Fetch statistics from GitHub API
+            async function fetchStats() {
+                try {
+                    const response = await fetch('https://api.github.com/repos/barely-a-dev/spm_repo/contents');
+                    const data = await response.json();
+                    console.log(data);
+                    // Count .ver files for total packages
+                    const totalPackages = data.filter(file => file.name.endsWith('.ver')).length;
+
+                    // Update statistics
+                    document.querySelectorAll('.stat-number').forEach((stat, index) => {
+                        switch (index) {
+                            case 0: // Total Packages
+                                stat.textContent = totalPackages;
+                                break;
+                            case 1: // Downloads (Needs backend implementation)
+                                stat.textContent = 'Coming Soon';
+                                break;
+                            case 2: // Contributors
+                                stat.textContent = '1';
+                                break;
+                            case 3: // Active Users
+                                fetch('/api/active-users').then(res => res.json())
+                                    .then(data => stat.textContent = data.count)
+                                    .catch(() => stat.textContent = 'Coming Soon');
+                                break;
+                        }
+                    });
+                } catch (error) {
+                    console.error('Failed to fetch statistics:', error);
+                }
+            }
+
+            fetchStats();
         });
 
-        // Copy functionality
-        document.querySelectorAll('.copy-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const command = btn.parentElement.textContent.trim().replace('Copy', '');
-                try {
-                    await navigator.clipboard.writeText(command);
-                    btn.textContent = 'Copied!';
-                    setTimeout(() => {
-                        btn.textContent = 'Copy';
-                    }, 2000);
-                } catch (err) {
-                    btn.textContent = 'Failed!';
-                    setTimeout(() => {
-                        btn.textContent = 'Copy';
-                    }, 2000);
-                }
-            });
-        });
     </script>
 </body>
 
