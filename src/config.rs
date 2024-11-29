@@ -84,6 +84,20 @@ impl Config {
         self.settings.get(key).clone().cloned()
     }
 
+    pub fn get_many(&self, key: &str) -> Vec<String> {
+        if let Some(value) = self.settings.get(key) {
+            // Remove brackets and split by comma
+            let value = value.trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .collect();
+            value
+        } else {
+            Vec::new()
+        }
+    }    
+
     pub fn get_github_token_dep(&self) -> Option<String> {
         self.get("github_token")
     }

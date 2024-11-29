@@ -186,7 +186,7 @@ This enables clean uninstallation and system state tracking.
 # ~/.spm.conf
 net_enabled = true
 github_token = "your_token" # This will be automatically removed, encrypted, and stored elsewhere.
-source_repo = "https://github.com/user/repo"
+src_repo = "https://github.com/user/repo"
 ```
 
 ### Package Settings

@@ -341,10 +341,25 @@ pub fn get_matches(
         require_root("updating config");
         let _conf_lock = Lock::new("conf").expect("Failed to lock config file");
         let key = args.next().expect("Key argument required");
-        let value = args.next().expect("Value argument required");
+
+        // Collect all remaining arguments into a vector
+        let values: Vec<String> = args.map(|s| s.to_string()).collect();
+        if values.is_empty() {
+            panic!("At least one value is required");
+        }
+
+        // Format the values as a string representation of an array
+        let value = format!(
+            "[{}]",
+            values
+                .iter()
+                .map(|s| format!("\"{}\"", s))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
 
         match key.as_str() {
-            "net_enabled" | "source_repo" | "github_token" => {
+            "net_enabled" | "src_repo" | "github_token" | "extra_repos" => {
                 if let Err(e) = config.set(key, value.to_string()) {
                     eprintln!("Failed to set config: {}", e);
                     process::exit(1);
@@ -598,14 +613,18 @@ pub fn get_matches(
         }
     } else if let Some(info) = matches.get_many::<String>("unpublish") {
         let (_, _, _, _token_lock) =
-        prefer_root("unpublish packages", &matches, false, false, false, true);
+            prefer_root("unpublish packages", &matches, false, false, false, true);
         let (packages, vers) = split_values(info);
         let mut pas_vers: Option<Vec<String>> = None;
-        if vers.len() > 0
-        {
+        if vers.len() > 0 {
             pas_vers = Some(vers);
         }
-        if let Err(e) = handle_remove_package(packages.get(0).expect("You must provide one package name"), &database, pas_vers, config) {
+        if let Err(e) = handle_remove_package(
+            packages.get(0).expect("You must provide one package name"),
+            &database,
+            pas_vers,
+            config,
+        ) {
             eprintln!("Failed to remove package: {}", e);
             process::exit(1);
         }
@@ -680,7 +699,8 @@ pub fn get_matches(
         }
         println!("File converted successfully");
     } else if let Some(output) = matches.get_one::<String>("mirror-repo") {
-        let (_lock, _, _, _) = prefer_root("mirror the repository", &matches, true, false, false, false);
+        let (_lock, _, _, _) =
+            prefer_root("mirror the repository", &matches, true, false, false, false);
         database.update_db().expect("Failed to update databse");
         let packages = database
             .list_all()
@@ -783,8 +803,7 @@ fn prefer_root(
             bin_lock = Some(Lock::new("bin").expect("Failed to lock binary"));
         }
 
-        if lock_token
-        {
+        if lock_token {
             token_lock = Some(Lock::new("token").expect("Failed to lock token"));
         }
     }
@@ -957,7 +976,9 @@ pub fn format_f(filename: &str, database: &Database, ver: &Option<String>) -> St
         .trim_end_matches(".spm")
         .to_owned()
         + "%26"
-        + ver.as_ref().unwrap_or(&database.get_recent(filename).unwrap_or("None".into()))
+        + ver
+            .as_ref()
+            .unwrap_or(&database.get_recent(filename).unwrap_or("None".into()))
 }
 
 // Helper functions for serialization/deserialization
