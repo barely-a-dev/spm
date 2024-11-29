@@ -9,7 +9,6 @@
     <title>SPM - Simple Package Manager</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        
         :root {
             --primary: #2d333b;
             --primary-light: #363c44;
@@ -27,7 +26,7 @@
             --transition-speed: 0.3s;
         }
 
-        
+
         *,
         *::before,
         *::after {
@@ -49,7 +48,7 @@
             overflow-x: hidden;
         }
 
-        
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -57,7 +56,7 @@
             position: relative;
         }
 
-        
+
         header {
             background: var(--gradient-primary);
             padding: 1.5rem 0;
@@ -70,7 +69,7 @@
         .search-results {
             position: absolute;
             top: calc(100% + 5px);
-            
+
             left: 0;
             right: 0;
             background: var(--secondary);
@@ -79,9 +78,9 @@
             box-shadow: var(--box-shadow);
             z-index: 1000;
             max-height: 400px;
-            
+
             overflow-y: auto;
-            
+
         }
 
 
@@ -125,7 +124,7 @@
             color: white;
         }
 
-        
+
         nav {
             display: flex;
             gap: 2rem;
@@ -157,7 +156,7 @@
             width: 100%;
         }
 
-        
+
         .feature-card {
             background: var(--secondary);
             padding: 2rem;
@@ -184,7 +183,7 @@
             transform: scaleX(1);
         }
 
-        
+
         .cmd {
             background: var(--primary-dark);
             padding: 1.5rem;
@@ -215,7 +214,7 @@
             background: var(--accent-light);
         }
 
-        
+
         .search-bar {
             background: var(--primary-dark);
             padding: 1rem;
@@ -255,7 +254,7 @@
             font-weight: bold;
         }
 
-        
+
         .fade-in {
             animation: fadeIn 0.5s ease-in;
         }
@@ -272,7 +271,7 @@
             }
         }
 
-        
+
         @media (max-width: 1024px) {
             .statistics {
                 grid-template-columns: repeat(2, 1fr);
@@ -298,7 +297,7 @@
 </head>
 
 <body>
-    
+
     <header>
         <div class="container header-content">
             <div class="logo-container">
@@ -318,7 +317,7 @@
     </header>
 
     <main class="container">
-        
+
         <div class="search-container" style="position: relative;">
             <div class="search-bar">
                 <i class="fas fa-search"></i>
@@ -327,7 +326,7 @@
         </div>
 
 
-        
+
         <div class="statistics">
             <div class="stat-card">
                 <div class="stat-number">PLACEHOLDER</div>
@@ -346,7 +345,7 @@
                 <div>Active Users</div>
             </div>
         </div>
-        
+
         <section id="features" class="fade-in">
             <h2>Key Features</h2>
             <div class="feature-grid"
@@ -370,7 +369,7 @@
                 </div> -->
             </div>
 
-            
+
             <section id="installation" class="fade-in">
                 <h2>Quick Installation</h2>
                 <div class="cmd">
@@ -385,7 +384,7 @@
                 </div>
             </section>
 
-            
+
             <section id="documentation" class="fade-in">
                 <h2>Getting Started</h2>
                 <div class="feature-card">
@@ -424,11 +423,13 @@
             document.querySelectorAll('.feature-card').forEach(card => {
                 observer.observe(card);
             });
-
-            // Enhanced copy functionality
+            
             document.querySelectorAll('.copy-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
-                    const command = btn.parentElement.textContent.trim().replace('Copy', '');
+                    // Get the command text, remove the $ and any extra whitespace
+                    const cmdText = btn.parentElement.firstChild.textContent.trim();
+                    const command = cmdText.replace(/^\$\s+/, '').trim();
+
                     try {
                         await navigator.clipboard.writeText(command);
                         btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
