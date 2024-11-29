@@ -511,13 +511,11 @@
                         }
                         searchInput.parentElement.parentElement.appendChild(resultsContainer);
                         resultsContainer.addEventListener('click', async (e) => {
-                            console.log("CLICK");
                             const downloadBtn = e.target.closest('.download-btn');
                             const copyInstallBtn = e.target.closest('.copy-install-btn');
 
                             if (downloadBtn) {
                                 const packageFile = downloadBtn.getAttribute('data-package');
-                                console.log("PKG: ", packageFile);
                                 try {
                                     window.location.href = `https://raw.githubusercontent.com/barely-a-dev/spm_repo/master/${packageFile}`;
                                 } catch (error) {
@@ -568,13 +566,12 @@
                 try {
                     const response = await fetch('https://api.github.com/repos/barely-a-dev/spm_repo/contents');
                     const data = await response.json();
-                    console.log(data);
                     const totalPackages = data.filter(file => file.name.endsWith('.ver')).length;
-                    document.querySelectorAll('.stat-number').forEach((stat, index) => {
+                    document.querySelectorAll('.stat-number').forEach(async (stat, index) => {
                         switch (index) {
                             case 0: stat.textContent = totalPackages;
                                 break;
-                            case 1: stat.textContent = 'Coming Soon';
+                            case 1: stat.textContent = await getGithubDownloadCount("barely-a-dev/spm");
                                 break;
                             case 2: stat.textContent = '1';
                                 break;
@@ -586,6 +583,29 @@
                     });
                 } catch (error) {
                     console.error('Failed to fetch statistics:', error);
+                }
+            }
+            async function getGithubDownloadCount(repo) {
+                try {
+                    const response = await fetch(`https://api.github.com/repos/${repo}/releases`, {
+                        headers: {
+                            'User-Agent': 'SPM-Site'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    const totalDownloads = data
+                        .flatMap(release => release.assets || [])
+                        .reduce((sum, asset) => sum + (asset.download_count || 0), 0);
+
+                    return totalDownloads;
+                } catch (error) {
+                    throw error;
                 }
             }
             fetchStats();
