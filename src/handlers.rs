@@ -18,6 +18,7 @@ use std::{
     error::Error,
     fs::{self, File},
     path::{Path, PathBuf},
+    process::exit
 };
 use uuid::Uuid;
 
@@ -555,9 +556,9 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}",
                 owner,
                 repo,
-                helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
-                    .trim_end_matches(".spm")
+                helpers::format_f(&filename, &ver)
             );
+            println!("Up: {}", upload_url);
 
             // Check if file exists
             let check_response = client
@@ -591,9 +592,23 @@ pub fn handle_publish_package(
                 .header("User-Agent", "spm-client")
                 .json(&commit_data)
                 .send()?;
+            let stat = response.status();
 
-            if response.status().is_success() {
-                // Upload the version file
+            if !stat.is_success() {
+                let error_body = &response.text()?;
+                if error_body.contains("too large")
+                {
+                    println!("Error contains too large. Please directly contact SPM's maintainer to publish packages over 50MB in size. Packages over 100MB can not yet be published as, well, I can't afford a server so I have to rely on GH.");
+                    exit(1);
+                }
+                return Err(format!(
+                    "Failed to publish package: {} - {}",
+                    stat,
+                    error_body
+                )
+                .into());
+            } else {
+                // Upload the recent version file
                 let ver_upload_url = format!(
                     "https://api.github.com/repos/{}/{}/contents/{}.ver",
                     owner,
@@ -609,7 +624,7 @@ pub fn handle_publish_package(
                 ver_commit_data.insert(
                     "message",
                     format!(
-                        "{{SPM_PUB_SYS}} Update version for {} to {} by {}",
+                        "{{SPM_PUB_SYS}} Update recent version for {} to {} by {}",
                         filename, ver_content, username
                     ),
                 );
@@ -646,8 +661,6 @@ pub fn handle_publish_package(
                     .into());
                 }
                 Ok(())
-            } else {
-                Err(format!("Failed to publish package: {}", response.status()).into())
             }
         }
         "read" | "pull" => {
@@ -690,8 +703,7 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}",
                 owner,
                 repo,
-                helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
-                    .trim_end_matches(".spm")
+                helpers::format_f(&filename, &ver)
             );
 
             let mut commit_data = HashMap::new();
@@ -730,7 +742,7 @@ pub fn handle_publish_package(
             ver_commit_data.insert(
                 "message",
                 format!(
-                    "{{SPM_PUB_SYS}} Add version file for {} v{} by {}",
+                    "{{SPM_PUB_SYS}} Add recent version file for {} v{} by {}",
                     filename, ver_content, username
                 ),
             );

@@ -394,11 +394,13 @@ pub fn get_matches(
             prefer_root("install packages", &matches, true, true, true);
 
         if let Some(packages) = matches.get_many::<String>("install") {
+            let (packages, vers) = split_values(packages);
             let client = reqwest::blocking::Client::new();
             let mut success_count = 0;
             let total_packages = packages.len();
 
-            for package in packages {
+            for i in 0..packages.len() {
+                let package = packages[i].as_str();
                 if package.starts_with("./") || package.ends_with(".spm") {
                     // Local package installation
                     match handle_install_package(package, None, cache) {
@@ -408,8 +410,7 @@ pub fn get_matches(
                         }
                         Err(e) => {
                             eprintln!("Failed to install local package {}: {}", package, e);
-                            if e.to_string().contains("File exists")
-                            {
+                            if e.to_string().contains("File exists") {
                                 println!("You probably installed the package with another package manager already.");
                             }
                         }
@@ -428,14 +429,16 @@ pub fn get_matches(
                         process::exit(1);
                     }
 
-                    match download_and_install_package(package, database, cache, &client) {
+                    let package = packages[i].as_str();
+                    let version = vers.get(i).cloned();
+
+                    match download_and_install_package(package, database, cache, &version, &client) {
                         Ok(_) => {
                             success_count += 1;
                         }
                         Err(e) => {
                             eprintln!("Failed to install package {}: {}", package, e);
-                            if e.to_string().contains("File exists")
-                            {
+                            if e.to_string().contains("File exists") {
                                 println!("You probably installed the package with another package manager already.");
                             }
                         }
@@ -454,8 +457,9 @@ pub fn get_matches(
     } else if let Some(mut a) = matches.get_many::<String>("fetch") {
         let package: Option<&String> = a.next();
         let output_dir: Option<&String> = a.next();
+        let req_ver: Option<String> = a.next().cloned();
         if let (Some(p), Some(o)) = (package, output_dir) {
-            download(&database, p, o, None).expect("Failed to download package.");
+            download(&database, p, o, &req_ver, None).expect("Failed to download package.");
         }
     } else if matches.contains_id("update") {
         let (_lock, _cache_lock, _bin_lock) =
@@ -504,7 +508,7 @@ pub fn get_matches(
                         }
                     }
 
-                    match download_and_install_package(name, database, cache, &client) {
+                    match download_and_install_package(name, database, cache, &database.get_recent(&name), &client) {
                         Ok(_) => {
                             println!("Successfully updated {}", package_name);
                             updated = true;
@@ -536,7 +540,7 @@ pub fn get_matches(
             let total_updates = updates.len();
 
             for (name, _, _) in updates {
-                match download_and_install_package(&name, database, cache, &client) {
+                match download_and_install_package(&name, database, cache, &database.get_recent(&name), &client) {
                     Ok(_) => {
                         success_count += 1;
                     }
@@ -580,13 +584,16 @@ pub fn get_matches(
             eprintln!("Failed to remove package: {}", e);
             process::exit(1);
         }
-    } else if let Some(package) = matches.get_one::<String>("uninstall") {
+    } else if let Some(packages) = matches.get_many::<String>("uninstall") {
         let (_lock, _cache_lock, _bin_lock) =
             prefer_root("uninstall packages", &matches, true, true, true);
 
-        if let Err(e) = handle_uninstall_package(package, cache) {
-            eprintln!("Failed to uninstall package: {}", e);
-            process::exit(1);
+        for package in packages
+        {
+            if let Err(e) = handle_uninstall_package(package, cache) {
+                eprintln!("Failed to uninstall package: {}", e);
+                process::exit(1);
+            }
         }
     // } else if matches.contains_id("do-nothing") {
     //     let def = &"5000".to_string();
@@ -656,16 +663,42 @@ pub fn get_matches(
             .expect("Failed to retrieve package list");
 
         for pack in packages {
-            let mut current_out = output.clone();
-            current_out.push_str(&pack);
-            match download(database, &pack, &current_out, None) {
-                Ok(_) => println!("Successfully mirrored package {pack}"),
-                Err(e) => eprintln!("Failed to download {pack}: {e}"),
+            for ver in database.get_vers(&pack)
+            {
+                let mut current_out = output.clone();
+                current_out.push_str(&pack);
+                match download(database, &pack, &current_out, &Some(ver), None) {
+                    Ok(_) => println!("Successfully mirrored package {pack}"),
+                    Err(e) => eprintln!("Failed to download {pack}: {e}"),
+                }
             }
         }
     } else {
         println!("Use -h or --help for usage information.");
     }
+}
+
+fn split_values(values: clap::parser::ValuesRef<'_, String>) -> (Vec<String>, Vec<String>) {
+    let values: Vec<&String> = values.collect();
+    let values: Vec<String> = values.iter().cloned().cloned().collect(); // Why does this need two cloned calls to work??
+    let mut before_amp = Vec::new();
+    let mut after_amp = Vec::new();
+    let mut found_amp = false;
+
+    for value in values {
+        if value == "&" {
+            found_amp = true;
+            continue;
+        }
+
+        if found_amp {
+            after_amp.push(value);
+        } else {
+            before_amp.push(value);
+        }
+    }
+
+    (before_amp, after_amp)
 }
 
 fn prompt_non_root_confirmation(force_op: bool, operation: &str) -> bool {
@@ -733,6 +766,7 @@ fn download(
     database: &Database,
     package_name: &str,
     output_name: &str,
+    req_ver: &Option<String>,
     client_op: Option<&reqwest::blocking::Client>,
 ) -> Result<(), Box<dyn Error>> {
     let client = if client_op.is_none() {
@@ -743,6 +777,26 @@ fn download(
 
     let parts: Vec<&str> = database.src().split('/').collect();
     let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
+    println!("{:#?}", database);
+
+    if database.exact_search(package_name.to_string()).is_none() {
+        println!("Package {} not found.", package_name);
+        exit(1);
+    }
+
+
+    let version = if let Some(v) = req_ver {
+        v
+    } else {
+        &match database.get_recent(package_name) {
+            Some(v) => v,
+            None => {
+                println!("Failed to get recent version. Try updating the database.");
+                exit(1)
+            }
+        }
+    };
+    let version = version.as_str();
 
     println!("Downloading package {}...", package_name);
 
@@ -752,13 +806,14 @@ fn download(
             "https://raw.githubusercontent.com/{}/{}/main/{}",
             owner,
             repo,
-            package_name.trim_end_matches(".spm")
+            package_name.trim_end_matches(".spm").to_string() + "%26" + version
         )
     } else {
         format!("{}/{}", database.src(), package_name)
     };
 
     // Download package
+    print!("{}", url);
     let response = client.get(&url).header("User-Agent", "spm-client").send()?;
 
     if !response.status().is_success() {
@@ -801,6 +856,7 @@ fn download_and_install_package(
     package_name: &str,
     database: &Database,
     cache: &mut Cache,
+    ver: &Option<String>,
     client: &reqwest::blocking::Client,
 ) -> Result<(), Box<dyn Error>> {
     // Check if package is already installed
@@ -812,7 +868,7 @@ fn download_and_install_package(
     let temp_path = format!("/tmp/{}", package_name);
 
     // Download the package using the download function
-    download(database, package_name, &temp_path, Some(client))?;
+    download(database, package_name, &temp_path, ver, Some(client))?;
 
     // Install downloaded package
     handle_install_package(&temp_path, None, cache)?;
@@ -865,4 +921,12 @@ pub fn validate_token(token: &String) -> anyhow::Result<&str> {
     }
 
     Ok("Valid token")
+}
+
+pub fn format_f(filename: &str, ver: &Option<String>) -> String {
+    remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+        .trim_end_matches(".spm")
+        .to_owned()
+        + "%26"
+        + ver.as_ref().unwrap()
 }

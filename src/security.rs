@@ -1,6 +1,5 @@
 use magic_crypt::{new_magic_crypt, MagicCryptTrait};
 use std::fs;
-use std::path::PathBuf;
 
 use crate::helpers;
 use crate::lock::Lock;

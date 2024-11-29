@@ -6,10 +6,10 @@ use reqwest;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{self, create_dir_all, File};
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-
+#[derive(Debug)]
 pub struct Database {
     src: String,
     entries: HashMap<String, (String, Vec<String>)>, // K: name, V.0: recent version, V.1: all versions
@@ -38,11 +38,9 @@ impl Database {
 
         if !path.exists() {
             let par = path.parent().expect("Failed to get path parent");
-            if !PathBuf::from(par).exists()
-            {
+            if !PathBuf::from(par).exists() {
                 fs::create_dir_all(par)?;
-            }
-            else {
+            } else {
                 File::create(&path)?;
             }
             self.update_db()?;
@@ -105,36 +103,62 @@ impl Database {
         // Clear existing entries
         self.entries.clear();
 
+        let mut valid_versions: HashMap<String, Vec<String>> = HashMap::new();
+
         // Parse the JSON response and extract file names
         if let Some(files) = content.as_array() {
             for file in files {
                 if let Some(name) = file["name"].as_str() {
-                    let package_name = name.trim_end_matches(".spm");
-
-                    // Get version from .ver file
-                    let ver_url = format!(
-                        "https://api.github.com/repos/{}/{}/contents/{}.ver",
-                        owner, repo, package_name
-                    );
-
-                    if let Ok(ver_response) = client
-                        .get(&ver_url)
-                        .header("User-Agent", "spm-client")
-                        .send()
+                    if name.ends_with(".ver")
                     {
-                        if let Ok(ver_content) = ver_response.json::<Value>() {
-                            if let Some(content) = ver_content["content"].as_str() {
-                                // GitHub API returns base64 encoded content
-                                if let Ok(decoded) = base64::engine::general_purpose::STANDARD
-                                    .decode(content.replace('\n', ""))
-                                {
-                                    if let Ok(version) = String::from_utf8(decoded) {
-                                        let version = version.trim();
-                                        self.entries.insert(
-                                            package_name.to_string(),
-                                            (version.to_string(), Vec::new()),
-                                        ); // TODO!!
-                                    }
+                        continue;
+                    }
+                    if name.ends_with(".spm")
+                    {
+                        println!("Alert the maintainer of an invalid package in the repository. It is called \"{}\"", name);
+                    }
+                    let package_name = name.trim_end_matches(".spm");
+                    let package_info: Vec<&str> = package_name.split('&').collect();
+                    if package_info.len() != 2 {
+                        println!("Invalid package string, \"{name}\" skipping.");
+                        continue;
+                    }
+                    let package_name = package_info[0];
+                    let package_version = package_info[1];
+
+                    valid_versions
+                        .entry(package_name.to_string())
+                        .or_insert_with(Vec::new)
+                        .push(package_version.to_string());
+                }
+            }
+            for name in valid_versions.keys() {
+                let package_name = name.as_str();
+
+                // Get version from .ver file
+                let ver_url = format!(
+                    "https://api.github.com/repos/{}/{}/contents/{}.ver",
+                    owner, repo, package_name
+                );
+
+                if let Ok(ver_response) = client
+                    .get(&ver_url)
+                    .header("User-Agent", "spm-client")
+                    .send()
+                {
+                    if let Ok(ver_content) = ver_response.json::<Value>() {
+                        if let Some(content) = ver_content["content"].as_str() {
+                            // GitHub API returns base64 encoded content
+                            if let Ok(decoded) = base64::engine::general_purpose::STANDARD
+                                .decode(content.replace('\n', ""))
+                            {
+                                if let Ok(version) = String::from_utf8(decoded) {
+                                    let version = version.trim();
+                                    let available_versions_fp: Vec<String> = valid_versions.get(package_name).unwrap().to_owned();
+                                    self.entries.insert(
+                                        package_name.to_string(),
+                                        (version.to_string(), available_versions_fp),
+                                    );
                                 }
                             }
                         }
@@ -149,7 +173,7 @@ impl Database {
 
         let mut file = File::create(&path)?;
         for (name, (version, versions)) in &self.entries {
-            write!(file, "{}:{}", name, version)?;
+            write!(file, "{}:{}:", name, version)?;
             let vers_string = versions.join(",");
             let vers_string = vers_string.trim_end_matches(',');
             writeln!(file, "{}", vers_string)?;
@@ -190,6 +214,17 @@ impl Database {
             .1
             .iter()
             .any(|v| dep.valid_versions.contains(v))
+    }
+
+    pub fn get_recent(&self, package_name: &str) -> Option<String> {
+        self.entries.get(package_name).map(|e| e.0.clone())
+    }
+
+    pub fn get_vers(&self, package_name: &str) -> Vec<String> {
+        self.entries
+            .get(package_name)
+            .map(|vs| vs.1.clone())
+            .unwrap_or(Vec::new())
     }
 
     pub fn check_updates(&self, cache: &Cache) -> Vec<(String, String, String)> {
@@ -327,12 +362,14 @@ impl Cache {
         cache
     }
 
-    pub fn check_for_deps(&self, deps: Vec<Dependency>, db: Database)
-    {
-        for dep in deps
-        {
-            
+    pub fn check_for_deps(&self, deps: Vec<Dependency>) -> Vec<String> {
+        let mut missing: Vec<String> = Vec::new();
+        for dep in deps {
+            if !self.has_package(&dep.name) {
+                missing.push(dep.name);
+            }
         }
+        missing
     }
 
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
