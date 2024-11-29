@@ -31,7 +31,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("3.14.25")
+        .version("3.14.26")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(

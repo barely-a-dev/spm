@@ -813,6 +813,7 @@ pub fn handle_publish_package(
 pub fn handle_remove_package(
     package_name: &str,
     database: &db::Database,
+    vers: Option<Vec<String>>,
     config: &mut Config,
 ) -> Result<(), Box<dyn Error>> {
     let token = match config.get_github_token() {
@@ -881,13 +882,19 @@ pub fn handle_remove_package(
     // Construct file path
     let file_path = format!("{}", package_name);
 
+    let vs: Vec<String> = if let Some(ves) = vers {
+        ves
+    } else {
+        database.get_vers(&file_path)
+    };
+
     match permission_level {
         "admin" | "write" => {
             let mut errs: Vec<&str> = vec![];
             let mut delete_response_succ: bool = true;
             let mut delete_response: Option<Response> = None;
 
-            for version in database.get_vers(&file_path) {
+            for version in vs {
                 // Direct removal flow
                 let file_url = format!(
                     "https://api.github.com/repos/{}/{}/contents/{}",
@@ -933,11 +940,9 @@ pub fn handle_remove_package(
                 delete_response = Some(loc_delete_response);
             }
 
-            if errs.len() > 0
-            {
+            if errs.len() > 0 {
                 println!("Errors occurred during deletions:");
-                for err in errs
-                {
+                for err in errs {
                     println!("\t{err}");
                 }
             }
@@ -1026,43 +1031,47 @@ pub fn handle_remove_package(
                 .json(&ref_data)
                 .send()?;
 
-            // Delete both package and version files
-            let file_url = format!(
-                "https://api.github.com/repos/{}/{}/contents/{}",
-                owner, repo, file_path
-            );
+            // Delete package files for all versions
+            for version in vs.iter() {
+                let formatted_path =
+                    helpers::format_f(&file_path, database, &Some(version.clone()));
+                let file_url = format!(
+                    "https://api.github.com/repos/{}/{}/contents/{}",
+                    owner, repo, formatted_path
+                );
 
-            let file_response = client
-                .get(&file_url)
-                .header("Authorization", format!("token {}", token))
-                .header("User-Agent", "spm-client")
-                .send()?;
+                // Try to get file SHA
+                if let Ok(file_response) = client
+                    .get(&file_url)
+                    .header("Authorization", format!("token {}", token))
+                    .header("User-Agent", "spm-client")
+                    .send()
+                {
+                    if file_response.status().is_success() {
+                        let file_info: Value = file_response.json()?;
+                        if let Some(file_sha) = file_info["sha"].as_str() {
+                            // Delete package file
+                            let mut delete_data = HashMap::new();
+                            delete_data.insert(
+                                "message",
+                                format!(
+                                    "{{SPM_REM_SYS}} Remove package {} version {} by {}",
+                                    package_name, version, username
+                                ),
+                            );
+                            delete_data.insert("sha", file_sha.to_string());
+                            delete_data.insert("branch", branch_name.clone());
 
-            if !file_response.status().is_success() {
-                return Err("Package not found in repository".into());
+                            let delete_response = client
+                                .delete(&file_url)
+                                .header("Authorization", format!("token {}", token))
+                                .header("User-Agent", "spm-client")
+                                .json(&delete_data)
+                                .send()?;
+                        }
+                    }
+                }
             }
-
-            let file_info: Value = file_response.json()?;
-            let file_sha = file_info["sha"].as_str().ok_or("Unable to get file SHA")?;
-
-            // Delete package file
-            let mut delete_data = HashMap::new();
-            delete_data.insert(
-                "message",
-                format!(
-                    "{{SPM_REM_SYS}} Remove package {} by {}",
-                    package_name, username
-                ),
-            );
-            delete_data.insert("sha", file_sha.to_string());
-            delete_data.insert("branch", branch_name.clone());
-
-            let _delete_response = client
-                .delete(&file_url)
-                .header("Authorization", format!("token {}", token))
-                .header("User-Agent", "spm-client")
-                .json(&delete_data)
-                .send()?;
 
             // Try to delete version file if it exists
             let ver_file_url = format!(
@@ -1103,6 +1112,7 @@ pub fn handle_remove_package(
             // Create pull request
             let pr_url = format!("https://api.github.com/repos/{}/{}/pulls", owner, repo);
 
+            let versions_str = vs.join(", ");
             let mut pr_data = HashMap::new();
             pr_data.insert(
                 "title",
@@ -1114,12 +1124,12 @@ pub fn handle_remove_package(
             pr_data.insert("head", branch_name);
             pr_data.insert("base", "main".to_string());
             pr_data.insert(
-                "body",
-                format!(
-                    "Automated pull request for package removal\nPackage: {}\nRequested by: {}",
-                    package_name, username
-                ),
-            );
+        "body",
+        format!(
+            "Automated pull request for package removal\nPackage: {}\nVersions: {}\nRequested by: {}",
+            package_name, versions_str, username
+        ),
+    );
 
             let pr_response = client
                 .post(&pr_url)

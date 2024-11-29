@@ -596,10 +596,16 @@ pub fn get_matches(
             eprintln!("Failed to publish package: {}", e);
             process::exit(1);
         }
-    } else if let Some(package_file) = matches.get_one::<String>("unpublish") {
+    } else if let Some(info) = matches.get_many::<String>("unpublish") {
         let (_, _, _, _token_lock) =
-        prefer_root("unpublish a package", &matches, false, false, false, true);
-        if let Err(e) = handle_remove_package(package_file, &database, config) {
+        prefer_root("unpublish packages", &matches, false, false, false, true);
+        let (packages, vers) = split_values(info);
+        let mut pas_vers: Option<Vec<String>> = None;
+        if vers.len() > 0
+        {
+            pas_vers = Some(vers);
+        }
+        if let Err(e) = handle_remove_package(packages.get(0).expect("You must provide one package name"), &database, pas_vers, config) {
             eprintln!("Failed to remove package: {}", e);
             process::exit(1);
         }
@@ -922,8 +928,8 @@ pub fn get_token() -> String {
 
 pub fn validate_token(token: &String) -> anyhow::Result<&str> {
     // Check if empty or too short
-    if token.is_empty() || token.len() < 40 {
-        return Err(anyhow::Error::msg("Token is too short"));
+    if token.is_empty() {
+        return Err(anyhow::Error::msg("Token is empty"));
     }
 
     // Check prefix
