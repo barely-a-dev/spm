@@ -20,7 +20,7 @@ zstd = "0.13.2"
 [workspace.package]
 edition = "2021"
 license = "GPL-3.0"
-version = "3.14.27"
+version = "3.14.28"
 
 [profile.release]
 lto = true

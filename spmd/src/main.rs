@@ -23,7 +23,7 @@ fn main() {
     }
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("3.14.27")
+        .version("3.14.28")
         .author("Nobody")
         .about("The developer tools for SPM")
         .arg(

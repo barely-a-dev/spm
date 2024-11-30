@@ -24,7 +24,7 @@ fn main() {
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("3.14.27")
+        .version("3.14.28")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -34,22 +34,6 @@ fn main() {
                 .help("Install a patch file to a specified directory")
                 .num_args(2)
                 .value_names(["TARGET_DIR", "PATCH_FILE"]),
-        )
-        .arg(
-            Arg::new("package-dir")
-                .short('P')
-                .long("package-dir")
-                .help("Package the contents of a directory into a .spm package")
-                .num_args(2)
-                .value_names(["SOURCE_DIR", "OUTPUT_FILE"]),
-        )
-        .arg(
-            Arg::new("package-file")
-                .short('f')
-                .long("package-file")
-                .help("Package a single file into a .spm package")
-                .num_args(2)
-                .value_names(["SOURCE_FILE", "OUTPUT_FILE"]),
         )
         .arg(
             Arg::new("install-package")
