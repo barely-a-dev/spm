@@ -14,7 +14,8 @@ use tar::Archive as TarArchive;
 use xz2::read::XzDecoder;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
+    args.remove(0);
     if args.len() < 1
     {
         println!("You must pass at least one argument.");
