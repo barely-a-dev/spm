@@ -1,0 +1,19 @@
+[package]
+name = "spmc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+include = ["src/**/*", "LICENSE", "README.md"]
+
+[dependencies]
+anyhow.workspace = true
+ar = "0.9.0"
+bzip2 = "0.4.4"
+flate2 = "1.0.35"
+libc.workspace = true
+rpm = "0.16.0"
+spm_lib = { path = "../lib" }
+tar = "0.4.43"
+xz2 = "0.1.7"
+zip = "2.2.1"
+zstd.workspace = true

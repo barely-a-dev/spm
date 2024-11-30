@@ -1,15 +1,58 @@
-use crate::package::Package;
+use spm_lib::package::Package;
 use ar::Archive;
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use rpm::Package as RPMPackage;
+use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::exit;
 use tar::Archive as TarArchive;
 use xz2::read::XzDecoder;
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 1
+    {
+        println!("You must pass at least one argument.");
+        exit(1);
+        
+    }
+    for arg in args
+    {
+        let file = PathBuf::from(arg.clone());
+        if file.exists()
+        {
+            let out = arg.clone() + ".spm";
+            convert(&arg, &out).expect("Failed to convert file");
+        }
+        else {
+            println!("ERR: {} does not exist. spmc takes paths to files.", arg);
+        }
+    }
+}
+
+fn convert(input: &str, output: &str) -> Result<(), Box<dyn Error>> {
+    match detect_file_type(input)? {
+        Some(file_type) => match file_type.as_str() {
+            "deb" => convert_deb_to_spm(Path::new(input), Path::new(output))?,
+            "rpm" =>
+            /*convert_rpm_to_spm(Path::new(input), Path::new(output))?*/
+            {
+                println!("RPM conversion is not supported at this time.");
+            }
+            "tar.gz" => convert_targz_to_spm(Path::new(input), Path::new(output))?,
+            "zip" => convert_zip_to_spm(Path::new(input), Path::new(output))?,
+            "tar.bz2" => convert_tarbz2_to_spm(Path::new(input), Path::new(output))?,
+            _ => return Err(format!("Unsupported file type: {}", file_type).into()),
+        },
+        None => return Err("Unable to detect file type".into()),
+    }
+    Ok(())
+}
 
 pub fn convert_deb_to_spm(deb_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
     let mut package = Package::new();

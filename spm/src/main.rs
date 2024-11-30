@@ -1,20 +1,12 @@
 mod config;
-mod conversion;
-mod db;
 mod handlers;
 mod helpers;
-mod lock;
-mod package;
-mod patch;
 mod security;
-
 use crate::config::{Config, PackageConfig};
 use clap::{Arg, ArgAction, Command as ClapCommand};
-use db::Cache;
-use package::Package;
+use spm_lib::db::Cache;
 use security::Security;
 use std::process;
-
 fn main() {
     let mut config = match Config::load() {
         Ok(c) => c,
@@ -24,14 +16,18 @@ fn main() {
         }
     };
     let mut database = if let Some(s) = config.get("src_repo") {
-        db::Database::from_src(s).unwrap_or(db::Database::new())
+        spm_lib::db::Database::from_src(s).unwrap_or(spm_lib::db::Database::new())
     } else {
-        db::Database::new()
+        spm_lib::db::Database::new()
     };
+    for src in config.get_many("extra_repos")
+    {
+        database.srcs_mut().push(src);
+    }
     let mut cache = Cache::load();
     database.load().expect("Failed to load database");
     let matches = ClapCommand::new("SPM")
-        .version("3.14.26")
+        .version("3.14.27")
         .author("Nobody")
         .about("A simple package and patch manager")
         .arg(
@@ -257,6 +253,5 @@ fn main() {
                 .action(ArgAction::Version)
         )
         .get_matches();
-
     helpers::get_matches(matches, &mut config, &mut database, &mut cache);
 }

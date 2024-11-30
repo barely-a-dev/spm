@@ -1,11 +1,11 @@
-use crate::db;
-use crate::db::Cache;
-use crate::helpers;
+use spm_lib::db;
+use spm_lib::db::Cache;
 use crate::helpers::parse_name_and_version;
-use crate::lock::Lock;
+use spm_lib::lock::Lock;
 use crate::security::Security;
 use crate::Config;
-use crate::Package;
+use crate::helpers as shelp;
+use spm_lib::package::Package;
 use crate::PackageConfig;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -493,10 +493,10 @@ pub fn handle_publish_package(
     let token = if tokenfile.exists() {
         match config.get_github_token() {
             Some(token) => token,
-            None => helpers::get_token(),
+            None => shelp::get_token(),
         }
     } else {
-        helpers::get_token()
+        shelp::get_token()
     };
 
     let client = reqwest::blocking::Client::new();
@@ -555,7 +555,7 @@ pub fn handle_publish_package(
         .ok_or("Invalid UTF-8 in filename")?;
 
     let (filename, mut ver) =
-        helpers::parse_name_and_version(filename.split('/').last().unwrap_or("unnamed_f"));
+        shelp::parse_name_and_version(filename.split('/').last().unwrap_or("unnamed_f"));
 
     if ver.is_none() {
         ver = Some(_package.version);
@@ -571,7 +571,7 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}",
                 owner,
                 repo,
-                helpers::format_f(&filename, database, &ver)
+                shelp::format_f(&filename, database, &ver)
             );
             println!("Up: {}", upload_url);
 
@@ -622,7 +622,7 @@ pub fn handle_publish_package(
                     "https://api.github.com/repos/{}/{}/contents/{}.ver",
                     owner,
                     repo,
-                    helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+                    shelp::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
                         .trim_end_matches(".spm")
                 );
 
@@ -712,7 +712,7 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}",
                 owner,
                 repo,
-                helpers::format_f(&filename, database, &ver)
+                shelp::format_f(&filename, database, &ver)
             );
 
             let mut commit_data = HashMap::new();
@@ -740,7 +740,7 @@ pub fn handle_publish_package(
                 "https://api.github.com/repos/{}/{}/contents/{}.ver",
                 owner,
                 repo,
-                helpers::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
+                shelp::remove_ver(filename.split('/').last().unwrap_or("unnamed_f"))
                     .trim_end_matches(".spm")
             );
 
@@ -900,7 +900,7 @@ pub fn handle_remove_package(
                     "https://api.github.com/repos/{}/{}/contents/{}",
                     owner,
                     repo,
-                    helpers::format_f(&file_path, database, &Some(version)),
+                    shelp::format_f(&file_path, database, &Some(version)),
                 );
 
                 // Get file SHA
@@ -1034,7 +1034,7 @@ pub fn handle_remove_package(
             // Delete package files for all versions
             for version in vs.iter() {
                 let formatted_path =
-                    helpers::format_f(&file_path, database, &Some(version.clone()));
+                    shelp::format_f(&file_path, database, &Some(version.clone()));
                 let file_url = format!(
                     "https://api.github.com/repos/{}/{}/contents/{}",
                     owner, repo, formatted_path
@@ -1331,7 +1331,7 @@ pub fn handle_dev_pub(
 
     if let Some(output) = output_file {
         if output.exists() {
-            if let Ok((uid, gid)) = crate::helpers::get_real_user() {
+            if let Ok((uid, gid)) = spm_lib::helpers::get_real_user() {
                 // Create temp file with proper ownership
                 if let Ok(file) = File::create(&package_file) {
                     drop(file); // Close the file handle

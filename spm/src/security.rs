@@ -1,8 +1,7 @@
 use magic_crypt::{new_magic_crypt, MagicCryptTrait};
 use std::fs;
 
-use crate::helpers;
-use crate::lock::Lock;
+use spm_lib::lock::Lock;
 
 pub struct Security {}
 
@@ -44,7 +43,7 @@ impl Security {
                 let token = rpassword::prompt_password("Enter token: ")?;
                 let token = token.trim().to_string();
 
-                match helpers::validate_token(&token) {
+                match crate::helpers::validate_token(&token) {
                     Ok(_) => {
                         let password = rpassword::prompt_password("Create your password: ")
                             .map_err(|e| {
@@ -81,7 +80,7 @@ impl Security {
         let token = rpassword::prompt_password("Enter your token: ")?;
         let token = token.trim().to_string();
 
-        match helpers::validate_token(&token) {
+        match crate::helpers::validate_token(&token) {
             Ok(_) => {
                 let password = rpassword::prompt_password("Create your password: ")?;
                 Security::encrypt_and_save_token(token, &password)?;

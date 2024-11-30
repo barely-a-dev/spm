@@ -1,70 +1,23 @@
-use crate::conversion::detect_file_type;
-use crate::conversion::*;
-use crate::db::Cache;
-use crate::db::Database;
-use crate::db::FileState;
+use spm_lib::db::Cache;
+use spm_lib::db::Database;
 use crate::handlers::*;
-use crate::lock::Lock;
-use crate::patch::Patch;
+use spm_lib::lock::Lock;
+use spm_lib::patch::Patch;
 use crate::Config;
 use crate::Security;
 use anyhow;
-use base64::Engine;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
 use std::io::stdin;
-use std::io::Read;
 use std::io::Write;
 use std::process::exit;
 use std::{
-    collections::HashMap,
     error::Error,
-    fs::{self, File},
+    fs::{self},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     process,
 };
-
-// Helper functions for varint encoding/decoding
-pub fn write_varint<W: Write>(writer: &mut W, mut value: u32) -> Result<(), Box<dyn Error>> {
-    loop {
-        let mut byte = (value & 0x7F) as u8;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80;
-        }
-        writer.write_all(&[byte])?;
-        if value == 0 {
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-pub fn read_varint<R: Read>(reader: &mut R) -> Result<u32, Box<dyn Error>> {
-    let mut result = 0;
-    let mut shift = 0;
-    loop {
-        let mut byte = [0u8];
-        reader.read_exact(&mut byte)?;
-        result |= ((byte[0] & 0x7F) as u32) << shift;
-        if byte[0] & 0x80 == 0 {
-            break;
-        }
-        shift += 7;
-    }
-    Ok(result)
-}
-
-pub fn get_real_user() -> Result<((u32, String), u32), Box<dyn Error>> {
-    unsafe {
-        let uid = libc::getuid();
-        let user = env::var("SUDO_USER").unwrap_or("user".to_string());
-        let gid = libc::getgid();
-        Ok(((uid, user), gid))
-    }
-}
 
 pub fn parse_name_and_version(filename: &str) -> (String, Option<String>) {
     let patterns = ["-v", "_v", "v"];
@@ -93,12 +46,8 @@ pub fn remove_ver(filename: &str) -> String {
     return parse_name_and_version(filename).0;
 }
 
-pub fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
-}
-
 pub fn require_root(operation: &str) {
-    if !is_root() {
+    if !spm_lib::helpers::is_root() {
         eprintln!(
             "Root privileges required for {}. Please run with sudo.",
             operation
@@ -687,17 +636,7 @@ pub fn get_matches(
             }
         }
     } else if matches.get_flag("statistics") {
-    } else if let Some(mut args) = matches.get_many::<String>("convert-file") {
-        let input_file = args.next().expect("Input file argument required");
-        let output_file = args.next().expect("Output file argument required");
-
-        println!("Attempting to convert...");
-
-        if let Err(e) = convert(input_file, output_file) {
-            eprintln!("Failed to convert file: {}", e);
-            process::exit(1);
-        }
-        println!("File converted successfully");
+        // TODO  
     } else if let Some(output) = matches.get_one::<String>("mirror-repo") {
         let (_lock, _, _, _) =
             prefer_root("mirror the repository", &matches, true, false, false, false);
@@ -785,7 +724,7 @@ fn prefer_root(
     let mut bin_lock = None;
     let mut token_lock = None;
 
-    if !is_root() {
+    if !spm_lib::helpers::is_root() {
         if !prompt_non_root_confirmation(matches.get_flag("force-op"), operation) {
             std::process::exit(1);
         }
@@ -880,25 +819,6 @@ fn download(
     Ok(())
 }
 
-fn convert(input: &str, output: &str) -> Result<(), Box<dyn Error>> {
-    match detect_file_type(input)? {
-        Some(file_type) => match file_type.as_str() {
-            "deb" => convert_deb_to_spm(Path::new(input), Path::new(output))?,
-            "rpm" =>
-            /*convert_rpm_to_spm(Path::new(input), Path::new(output))?*/
-            {
-                println!("RPM conversion is not supported at this time.");
-            }
-            "tar.gz" => convert_targz_to_spm(Path::new(input), Path::new(output))?,
-            "zip" => convert_zip_to_spm(Path::new(input), Path::new(output))?,
-            "tar.bz2" => convert_tarbz2_to_spm(Path::new(input), Path::new(output))?,
-            _ => return Err(format!("Unsupported file type: {}", file_type).into()),
-        },
-        None => return Err("Unable to detect file type".into()),
-    }
-    Ok(())
-}
-
 // Helper function to download and install a package
 fn download_and_install_package(
     package_name: &str,
@@ -979,102 +899,4 @@ pub fn format_f(filename: &str, database: &Database, ver: &Option<String>) -> St
         + ver
             .as_ref()
             .unwrap_or(&database.get_recent(filename).unwrap_or("None".into()))
-}
-
-// Helper functions for serialization/deserialization
-pub fn parse_file_list(data: &str) -> Vec<String> {
-    data.trim_matches(|c| c == '[' || c == ']')
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').to_string())
-        .collect()
-}
-
-pub fn parse_file_states(data: &str) -> HashMap<String, FileState> {
-    let mut states = HashMap::new();
-    if data.is_empty() {
-        return states;
-    }
-
-    // Remove the outer brackets
-    let content = data.trim_matches(|c| c == '[' || c == ']');
-
-    // Split by semicolon to get individual file entries
-    for entry in content.split(';') {
-        if entry.is_empty() {
-            continue;
-        }
-
-        // Find the position of the opening brace
-        if let Some(brace_pos) = entry.find('{') {
-            let path = entry[..brace_pos].to_string();
-            let state_data = &entry[brace_pos + 1..entry.len() - 1];
-
-            // Split the content and permissions
-            let parts: Vec<&str> = state_data.split(',').collect();
-
-            let content = if !parts[0].is_empty() {
-                base64::engine::general_purpose::STANDARD
-                    .decode(parts[0])
-                    .ok()
-            } else {
-                None
-            };
-
-            let permissions = if parts.len() > 1 && !parts[1].is_empty() {
-                parts[1].parse().ok()
-            } else {
-                None
-            };
-
-            states.insert(
-                path,
-                FileState {
-                    content,
-                    permissions,
-                },
-            );
-        }
-    }
-
-    states
-}
-
-pub fn write_file_list(file: &mut File, files: &[String]) -> Result<(), Box<dyn Error>> {
-    write!(file, "[")?;
-    for (i, path) in files.iter().enumerate() {
-        if i > 0 {
-            write!(file, ",")?;
-        }
-        write!(file, "\"{}\"", path)?;
-    }
-    write!(file, "]")?;
-    Ok(())
-}
-
-pub fn write_file_states(
-    file: &mut File,
-    states: &HashMap<String, FileState>,
-) -> Result<(), Box<dyn Error>> {
-    write!(file, "[")?;
-    for (i, (path, state)) in states.iter().enumerate() {
-        if i > 0 {
-            write!(file, ";")?;
-        }
-        write!(file, "{}{{", path)?;
-        if let Some(content) = &state.content {
-            write!(
-                file,
-                "{},",
-                base64::engine::general_purpose::STANDARD.encode(content)
-            )?;
-        } else {
-            write!(file, ",")?;
-        }
-        if let Some(perms) = state.permissions {
-            write!(file, "{}", perms)?;
-        }
-        write!(file, "}}")?;
-    }
-    write!(file, "]")?;
-    Ok(())
 }

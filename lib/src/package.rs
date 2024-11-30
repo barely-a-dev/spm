@@ -45,7 +45,7 @@ use crate::db::FileState;
 use crate::db::PackageState;
 use crate::helpers::{get_real_user, is_root, read_varint, write_varint};
 use crate::patch::Patch;
-use crate::Cache;
+use crate::db::Cache;
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::CString;
