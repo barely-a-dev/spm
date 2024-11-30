@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SPM - Changelog">
+    <title>SPM - Changelog</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <link href="../style.css" rel="stylesheet">
+    <style>
+        .changelog-container {
+            min-height: 100vh;
+            padding: 4rem 2rem;
+            background: var(--primary);
+        }
+
+        .changelog-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .changelog-title {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .changelog-subtitle {
+            color: var(--text);
+            opacity: 0.8;
+        }
+
+        .changelog-content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .version-block {
+            background: var(--primary-light);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .version-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .version-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+
+        .version-date {
+            color: var(--text);
+            opacity: 0.7;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .change-category {
+            margin-bottom: 1.5rem;
+        }
+
+        .category-title {
+            font-size: 1.1rem;
+            color: var(--accent-light);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .change-list {
+            list-style: none;
+            padding-left: 1.5rem;
+        }
+
+        .change-item {
+            color: var(--text);
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+
+        .change-item::before {
+            content: "•";
+            position: absolute;
+            left: -1rem;
+            color: var(--accent);
+        }
+
+        .back-link {
+            position: absolute;
+            top: 2rem;
+            left: 2rem;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all var(--transition-speed);
+        }
+
+        .back-link:hover {
+            color: var(--accent);
+            transform: translateX(-5px);
+        }
+
+        @media (max-width: 768px) {
+            .changelog-container {
+                padding: 2rem 1rem;
+            }
+
+            .version-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
+            .changelog-title {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <a href="../" class="back-link">
+        <i class="fas fa-arrow-left"></i> Back to Home
+    </a>
+    
+    <div class="changelog-container">
+        <div class="changelog-header">
+            <h1 class="changelog-title">Changelog</h1>
+            <p class="changelog-subtitle">A detailed history of updates and improvements</p>
+        </div>
+
+        <div class="changelog-content">
+            <!-- Version Block Template -->
+            <div class="version-block">
+                <div class="version-header">
+                    <span class="version-number">v3.14.24 - 3.14.27</span>
+                    <span class="version-date">2024/11/28 - 2024/11/29</span>
+                </div>
+
+                <div class="change-category">
+                    <h3 class="category-title">
+                        <i class="fas fa-star"></i> New Features
+                    </h3>
+                    <ul class="change-list">
+                        <li>Start working on system allowing for multiple source repos</li>
+                    </ul>
+                </div>
+
+                <div class="change-category">
+                    <h3 class="category-title">
+                        <i class="fas fa-wrench"></i> Improvements
+                    </h3>
+                    <ul class="change-list">
+                        <li>Made multiple package versions able to be available in the package repo</li>
+                    </ul>
+                </div>
+
+                <div class="change-category">
+                    <h3 class="category-title">
+                        <i class="fas fa-bug"></i> Bug Fixes
+                    </h3>
+                    <ul class="change-list">
+                        <li>Fix incorrect configuration key name</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

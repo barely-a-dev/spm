@@ -1,4 +1,4 @@
-use spm_lib::lock::Lock;
+use crate::lock::Lock;
 use crate::security::Security;
 use serde::Deserialize;
 use std::collections::HashMap;

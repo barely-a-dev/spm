@@ -1,11 +1,8 @@
-mod config;
 mod handlers;
 mod helpers;
-mod security;
-use crate::config::{Config, PackageConfig};
+use spm_lib::config::Config;
 use clap::{Arg, ArgAction, Command as ClapCommand};
 use spm_lib::db::Cache;
-use security::Security;
 use std::process;
 fn main() {
     let mut config = match Config::load() {
@@ -39,22 +36,6 @@ fn main() {
                 .value_names(["TARGET_DIR", "PATCH_FILE"]),
         )
         .arg(
-            Arg::new("create-patch")
-                .short('c')
-                .long("create-patch")
-                .help("Create a patch file from two versions of a file")
-                .num_args(3)
-                .value_names(["OLD_FILE", "NEW_FILE", "OUTPUT_PATCH"]),
-        )
-        .arg(
-            Arg::new("verify-patch")
-                .short('v')
-                .long("verify-patch")
-                .help("Verify a patch file's validity")
-                .num_args(1)
-                .value_name("PATCH_FILE"),
-        )
-        .arg(
             Arg::new("package-dir")
                 .short('P')
                 .long("package-dir")
@@ -69,14 +50,6 @@ fn main() {
                 .help("Package a single file into a .spm package")
                 .num_args(2)
                 .value_names(["SOURCE_FILE", "OUTPUT_FILE"]),
-        )
-        .arg(
-            Arg::new("verify-package")
-                .short('V')
-                .long("verify-package")
-                .help("Verify a package's validity")
-                .num_args(1)
-                .value_name("PACKAGE_FILE"),
         )
         .arg(
             Arg::new("install-package")
@@ -119,51 +92,12 @@ fn main() {
                 .value_name("PACKAGE"),
         )
         .arg(
-            Arg::new("fetch")
-                .short('F')
-                .long("fetch")
-                .help("Fetch a package from the database")
-                .num_args(2)
-                .value_names(["PACKAGE_NAME", "OUTPUT_FILE"]),
-        )
-        .arg(
             Arg::new("update")
                 .short('U')
                 .long("update")
                 .help("Check for and install package updates")
                 .num_args(0..)
                 .value_name("PACKAGE_NAME")
-        )
-        .arg(
-            Arg::new("allow-large")
-                .short('L')
-                .long("allow-large")
-                .help("Allow packaging of files larger than 100 MB")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("publish")
-                .short('b')
-                .long("publish")
-                .help("Publish a package to the configured repository")
-                .num_args(1)
-                .value_name("PACKAGE_FILE"),
-        )
-        .arg(
-            Arg::new("unpublish")
-                .short('r')
-                .long("remove")
-                .help("Remove a package from the configured repository")
-                .num_args(1)
-                .value_name("PACKAGE_FILE"),
-        )
-        .arg(
-            Arg::new("dev-pub")
-                .short('q')
-                .long("dev-pub")
-                .help("Detect the program type in either . or PROJ_DIR, build it, and publish the output")
-                .num_args(0..=1)
-                .value_name("PROJ_DIR"),
         )
         .arg(
             Arg::new("uninstall")
@@ -186,43 +120,6 @@ fn main() {
                 .short('S')
                 .long("stats")
                 .help("List installed packages and their files. Optionally specify a package name")
-                .action(ArgAction::SetTrue)
-        )
-        .arg(
-            Arg::new("mass-package")
-                .short('m')
-                .long("mass-pack")
-                .help("Package every file in IN_DIR into its own package, placing the package files in OUT_DIR")
-                .num_args(2)
-                .value_names(["IN_DIR", "OUT_DIR"])
-        )
-        .arg(
-            Arg::new("version")
-                .short('1')
-                .long("ver")
-                .help("Use this version during package creation instead of asking for it or using the ver in the filename")
-                .num_args(1)
-                .value_name("VERSION")
-        )
-        .arg(
-            Arg::new("convert-file")
-                .short('n')
-                .long("convert")
-                .help("Convert another package manager's package file to an SPM package")
-                .num_args(2)
-                .value_names(["IN_FILE", "OUT_FILE"])
-        )
-        .arg(
-            Arg::new("mirror-repo")
-                .long("mirror")
-                .help("Mirrors the contents of the entire current package repository into the specified directory")
-                .num_args(1)
-                .value_name("OUTPUT_DIR")
-        )
-        .arg(
-            Arg::new("reset-token")
-                .long("rtok")
-                .help("Reset your token")
                 .action(ArgAction::SetTrue)
         )
         .arg(

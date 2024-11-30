@@ -2747,17 +2747,12 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "dirs",
- "indicatif",
  "magic-crypt",
- "num_cpus",
  "reqwest",
  "rpassword",
  "serde",
  "serde_json",
  "spm_lib",
- "toml",
- "uuid",
- "walkdir",
 ]
 
 [[package]]
@@ -2768,8 +2763,11 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "libc",
+ "magic-crypt",
  "nix",
  "reqwest",
+ "rpassword",
+ "serde",
  "serde_json",
  "zstd",
 ]
@@ -2788,6 +2786,27 @@ dependencies = [
  "tar",
  "xz2",
  "zip",
+ "zstd",
+]
+
+[[package]]
+name = "spmd"
+version = "3.14.27"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
+ "dirs",
+ "indicatif",
+ "libc",
+ "num_cpus",
+ "reqwest",
+ "rpassword",
+ "serde_json",
+ "spm_lib",
+ "toml",
+ "uuid",
+ "walkdir",
  "zstd",
 ]
 

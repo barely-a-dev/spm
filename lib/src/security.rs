@@ -1,7 +1,7 @@
 use magic_crypt::{new_magic_crypt, MagicCryptTrait};
 use std::fs;
 
-use spm_lib::lock::Lock;
+use crate::lock::Lock;
 
 pub struct Security {}
 

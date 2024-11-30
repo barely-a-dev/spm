@@ -13,296 +13,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap"
         rel="stylesheet">
-    <style>
-        :root {
-            --primary: #1a1b26;
-            --primary-light: #24283b;
-            --primary-dark: #16161e;
-            --secondary: #1f2335;
-            --text: #a9b1d6;
-            --text-light: #c0caf5;
-            --accent: #7aa2f7;
-            --accent-light: #89b4fa;
-            --accent-dark: #6b8adb;
-            --success: #9ece6a;
-            --warning: #e0af68;
-            --error: #f7768e;
-            --gradient-primary: linear-gradient(135deg, var(--primary-light), var(--primary-dark));
-            --box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-            --transition-speed: 0.3s;
-        }
-
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        html {
-            scroll-behavior: smooth;
-            font-size: 16px;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            line-height: 1.7;
-            background: var(--primary);
-            color: var(--text);
-            overflow-x: hidden;
-        }
-
-        h1,
-        h2,
-        h3,
-        h4,
-        h5,
-        h6 {
-            color: var(--text-light);
-            font-weight: 600;
-            line-height: 1.3;
-            margin-bottom: 1rem;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-            position: relative;
-        }
-
-        header {
-            background: var(--gradient-primary);
-            padding: 1.5rem 0;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            box-shadow: var(--box-shadow);
-            backdrop-filter: blur(10px);
-        }
-
-        .logo-container {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-        }
-
-        .logo {
-            width: 48px;
-            height: 48px;
-            background: var(--accent);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: white;
-            font-size: 1.2rem;
-            box-shadow: 0 4px 12px rgba(122, 162, 247, 0.3);
-        }
-
-        nav {
-            display: flex;
-            gap: 2.5rem;
-            align-items: center;
-        }
-
-        nav a {
-            color: var(--text-light);
-            text-decoration: none;
-            padding: 0.75rem 1.25rem;
-            border-radius: 8px;
-            transition: all var(--transition-speed);
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        nav a:hover {
-            background: rgba(255, 255, 255, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .search-bar {
-            background: var(--primary-dark);
-            padding: 1.25rem;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin: 2.5rem 0;
-            box-shadow: var(--box-shadow);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .search-input {
-            background: transparent;
-            border: none;
-            color: var(--text);
-            flex: 1;
-            font-size: 1.1rem;
-            outline: none;
-            font-family: 'Inter', sans-serif;
-        }
-
-        .search-input::placeholder {
-            color: rgba(169, 177, 214, 0.5);
-        }
-
-        .statistics {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1.5rem;
-            margin: 3rem 0;
-        }
-
-        .stat-card {
-            background: var(--primary-light);
-            padding: 2rem;
-            border-radius: 16px;
-            text-align: center;
-            box-shadow: var(--box-shadow);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: transform var(--transition-speed);
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            color: var(--accent);
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .feature-card {
-            background: var(--primary-light);
-            padding: 2.5rem;
-            border-radius: 16px;
-            box-shadow: var(--box-shadow);
-            transition: transform var(--transition-speed);
-            position: relative;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .feature-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .cmd {
-            background: var(--primary-dark);
-            padding: 1.5rem 2rem;
-            border-radius: 12px;
-            position: relative;
-            font-family: 'JetBrains Mono', monospace;
-            border-left: 4px solid var(--accent);
-            margin: 1.5rem 0;
-            box-shadow: var(--box-shadow);
-        }
-
-        .copy-btn {
-            position: absolute;
-            right: 1.5rem;
-            top: 50%;
-            transform: translateY(-50%);
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.25rem;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all var(--transition-speed);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-family: 'Inter', sans-serif;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(122, 162, 247, 0.3);
-        }
-
-        .copy-btn:hover {
-            background: var(--accent-light);
-            transform: translateY(-50%) scale(1.2)
-        }
-
-        .search-results {
-            background: var(--primary-light);
-            border-radius: 12px;
-            margin-top: 0.5rem;
-            box-shadow: var(--box-shadow);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            overflow: hidden;
-        }
-
-        .search-result {
-            padding: 1.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            cursor: pointer;
-            transition: background var(--transition-speed);
-        }
-
-        .search-result:hover {
-            background: var(--primary);
-        }
-
-        .result-buttons {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        .result-button {
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all var(--transition-speed);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-
-        .result-button:hover {
-            background: var(--accent-light);
-            transform: translateY(-2px);
-        }
-
-        @media (max-width: 1024px) {
-            .statistics {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        @media (max-width: 768px) {
-            .header-content {
-                flex-direction: column;
-                gap: 1.5rem;
-            }
-
-            nav {
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-
-            .statistics {
-                grid-template-columns: 1fr;
-            }
-
-            .container {
-                padding: 1.5rem;
-            }
-        }
-    </style>
+    <link href="style.css" rel="stylesheet">
 </head>
 
 <body>
@@ -316,6 +27,7 @@
                 </div>
             </div>
             <nav>
+                <a href="#statistics"><i class="fas fa-chart-bar"></i> Statistics</a>
                 <a href="#features"><i class="fas fa-cube"></i> Features</a>
                 <a href="#installation"><i class="fas fa-download"></i> Installation</a>
                 <a href="#documentation"><i class="fas fa-book"></i> Docs</a>
@@ -330,24 +42,31 @@
                 <input type="text" class="search-input" placeholder="Search packages...">
             </div>
         </div>
-        <div class="statistics">
-            <div class="stat-card">
-                <div class="stat-number">PLACEHOLDER</div>
-                <div>Total Packages</div>
+        <section id="statistics" class="fade-in">
+            <h2>Statistics</h2>
+            <div class="statistics">
+                <div class="stat-card">
+                    <i class="fas fa-archive statistic-icon"></i>
+                    <div class="stat-number">PLACEHOLDER</div>
+                    <div>Total Packages</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-cloud-download-alt statistic-icon"></i>
+                    <div class="stat-number">PLACEHOLDER</div>
+                    <div>Downloads</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-users statistic-icon"></i>
+                    <div class="stat-number">PLACEHOLDER</div>
+                    <div>Contributors</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-active statistic-icon"></i>
+                    <div class="stat-number">PLACEHOLDER</div>
+                    <div>Active Users</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number">PLACEHOLDER</div>
-                <div>Downloads</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">PLACEHOLDER</div>
-                <div>Contributors</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">PLACEHOLDER</div>
-                <div>Active Users</div>
-            </div>
-        </div>
+        </section>
         <section id="features" class="fade-in">
             <h2>Key Features</h2>
             <div class="feature-grid"
@@ -404,6 +123,55 @@
             </section>
         </section>
     </main>
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>About SPM</h4>
+                    <ul>
+                        <li><a href="#features">Features</a></li>
+                        <li><a href="#installation">Installation</a></li>
+                        <li><a href="#documentation">Documentation</a></li>
+                        <li><a href="/changelog">Changelog</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="/docs">Documentation</a></li>
+                        <li><a href="/tutorials">Tutorials</a></li>
+                        <li><a href="/api">API Reference</a></li>
+                        <li><a href="/community">Community</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="/discord">Discord</a></li>
+                        <li><a href="/forum">Forum</a></li>
+                        <li><a href="/blog">Blog</a></li>
+                        <li><a href="/contribute">Contribute</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Connect</h4>
+                    <ul>
+                        <li><a href="/contact">Contact Us</a></li>
+                        <li><a href="/support">Support</a></li>
+                        <li><a href="/status">Status</a></li>
+                    </ul>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-github"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-discord"></i></a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 SPM. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const observer = new IntersectionObserver((entries) => {

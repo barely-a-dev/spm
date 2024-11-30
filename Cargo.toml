@@ -1,10 +1,11 @@
 # Workspace Cargo.toml
 [workspace]
 members = [
-    "lib",
-    "spm",
-    "spmc"
-]
+           "lib",
+           "spm",
+           "spmc",
+           "spmd"
+          ]
 resolver = "2"
 
 [workspace.dependencies]
