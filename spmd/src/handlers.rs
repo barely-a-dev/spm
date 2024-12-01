@@ -97,7 +97,7 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
         println!("Please enter the package name:");
         let mut buf = "".to_string();
         stdin().read_line(&mut buf)?;
-        package.name = buf.to_string();
+        package.name = buf.trim().to_string();
     }
 
     // Set package version
@@ -112,7 +112,7 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
                 println!("No version found. Please enter the package version:");
                 let mut buf = "".to_string();
                 stdin().read_line(&mut buf)?;
-                buf.to_string()
+                buf.trim().to_string()
             }
             Some(v) => v,
         }
@@ -346,7 +346,7 @@ pub fn handle_package_file(
                 println!("No version found. Please enter the package version:");
                 let mut buf = "".to_string();
                 stdin().read_line(&mut buf)?;
-                package.version = buf.to_string();
+                package.version = buf.trim().to_string();
             }
         }
     }
@@ -443,7 +443,7 @@ pub fn handle_package_file_atomic(
                 println!("No version found. Please enter the package version:");
                 let mut buf = "".to_string();
                 stdin().read_line(&mut buf)?;
-                package.version = buf.to_string();
+                package.version = buf.trim().to_string();
             }
         }
     }
