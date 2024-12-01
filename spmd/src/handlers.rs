@@ -671,7 +671,8 @@ pub fn handle_package_dir(
 pub fn handle_verify_package(package_path: &str) -> Result<(), Box<dyn Error>> {
     let package = Package::load_package(Path::new(package_path))?;
 
-    println!("Package is valid:");
+    println!("Package {} is valid:", package.name);
+    println!("Version: {}", package.version);
     println!("Requires root: {}", package.requires_root);
     println!("Number of files: {}", package.files.len());
     println!("Number of patches: {}", package.patches.len());
