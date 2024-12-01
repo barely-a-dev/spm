@@ -2,7 +2,7 @@
 name = "spmd"
 edition.workspace = true
 license.workspace = true
-version.workspace = true
+version = "3.15.28"
 
 [dependencies]
 clap = "4.5.21"

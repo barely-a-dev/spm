@@ -1,10 +1,5 @@
-use spm_lib::db;
-use crate::helpers::parse_name_and_version;
-use spm_lib::lock::Lock;
-use spm_lib::security::Security;
-use spm_lib::config::Config;
 use crate::helpers as shelp;
-use spm_lib::package::Package;
+use crate::helpers::parse_name_and_version;
 use crate::PackageConfig;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -12,6 +7,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::blocking::Response;
 use reqwest::StatusCode;
 use serde_json::Value;
+use spm_lib::config::Config;
+use spm_lib::db;
+use spm_lib::lock::Lock;
+use spm_lib::package::Package;
+use spm_lib::security::Security;
 use std::collections::HashMap;
 use std::io::stdin;
 use std::os::unix::fs::PermissionsExt;
@@ -19,15 +19,228 @@ use std::{
     error::Error,
     fs::{self, File},
     path::{Path, PathBuf},
-    process::exit,
+    process::{self, exit},
 };
 use uuid::Uuid;
+
+pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custom_name: Option<String>, ver: Option<String>) -> Result<(), Box<dyn Error>> {
+    let mut package = Package::new();
+    
+    // Create progress bar
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} [{elapsed_precise}] {wide_msg}")
+            .unwrap()
+    );
+
+    // Scan directory for executables
+    pb.set_message("Scanning for executables...");
+    
+    let files: Vec<PathBuf> = walkdir::WalkDir::new(input_dir)
+    .max_depth(1)
+    .follow_links(true)
+    .into_iter()
+    .filter_map(|e| e.ok())
+    .filter(|e| {
+        if let Ok(metadata) = e.metadata() {
+            // Check if it's a regular file and is executable
+            metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0)
+        } else {
+            false
+        }
+    })
+    .map(|entry| entry.path().to_path_buf())
+    .collect();
+
+    if files.is_empty() {
+        return Err("No executable files found in directory".into());
+    }
+
+    pb.set_message(format!("Found {} executable files", files.len()));
+
+    // Process each executable
+    for file_path in files {
+        let metadata = fs::metadata(&file_path)?;
+        
+        // Check file size if needed
+        if !allow_large && metadata.len() > 100_000_000 {
+            return Err(format!("File {} is larger than 100MB. Use -L to package anyway", file_path.display()).into());
+        }
+
+        let contents = fs::read(&file_path)?;
+        let permissions = metadata.permissions().mode();
+        
+        // Use just the file name as the relative path
+        let relative_path = PathBuf::from(file_path.file_name().ok_or("Invalid file name")?);
+
+        // Check if file requires root permissions
+        if file_path.starts_with("/usr/bin")
+            || file_path.starts_with("/usr/sbin")
+            || permissions & 0o4000 != 0
+            || permissions & 0o2000 != 0
+        {
+            package.requires_root = true;
+        }
+
+        // All executables go to /usr/bin
+        let target_dir = Some(PathBuf::from("/usr/bin"));
+
+        pb.set_message(format!("Adding {} to package...", relative_path.display()));
+        package.add_file(relative_path, permissions, contents, target_dir);
+    }
+
+    // Set package name
+    if let Some(name) = custom_name {
+        package.name = name;
+    } else {
+        // Use directory name as package name if no custom name provided
+        package.name = PathBuf::from(input_dir)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unnamed")
+            .to_string();
+    }
+
+    // Set package version
+    if let Some(version) = ver {
+        package.version = version;
+    } else {
+        // If no version specified, try to extract from output file name or use default
+        let (_, file_version) = parse_name_and_version(output_file);
+        package.version = file_version.unwrap_or_else(|| "1.0.0".to_string());
+    }
+
+    // Save the package
+    pb.set_message("Saving package file...");
+    package.save_package(Path::new(output_file))?;
+
+    pb.finish_with_message(format!("Package created successfully: {}", output_file));
+    Ok(())
+}
+
+pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom_name: &Option<String>, ver: &Option<String>) { // (More args need to be references due to using ops that repeat)
+    // Create output directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all(output_dir) {
+        eprintln!("Failed to create output directory: {}", e);
+        process::exit(1);
+    }
+
+    println!("Processing files from {} to {}", input_dir, output_dir);
+
+    // Collect all files
+    let files: Vec<PathBuf> = walkdir::WalkDir::new(input_dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|entry| entry.path().to_path_buf())
+        .collect();
+
+    let total_count = files.len();
+    println!("Found {} files to process", total_count);
+
+    // Create main progress bar
+    let pb = ProgressBar::new(total_count as u64);
+    pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)\n{wide_msg}")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+
+    // Create atomic counter for successful operations
+    let success_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let pb = std::sync::Arc::new(pb);
+
+    // Determine number of threads
+    let num_threads = num_cpus::get().max(1);
+    let chunk_size = (files.len() + num_threads - 1) / num_threads;
+
+    // Process files in parallel
+    let results: Vec<_> = files
+        .chunks(chunk_size)
+        .map(|chunk| {
+            let pb = pb.clone();
+            let output_dir = output_dir.to_string();
+            let chunk = chunk.to_vec();
+            let success_count = success_count.clone();
+            let allow_large = allow_large;
+            let ver = ver.clone();
+            let custom_name = custom_name.clone();
+
+            std::thread::spawn(move || {
+                for file_path in chunk {
+                    let input_file = file_path.to_string_lossy().to_string();
+                    let file_name = file_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+
+                    let output_file = Path::new(&output_dir)
+                        .join(format!("{}.spm", file_name))
+                        .to_string_lossy()
+                        .to_string();
+
+                    pb.set_message(format!("Processing: {}", file_name));
+
+                    match handle_package_file_atomic(
+                        &input_file,
+                        &output_file,
+                        allow_large,
+                        false,
+                        &custom_name,
+                        &ver,
+                    ) {
+                        Ok(_) => {
+                            success_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Err(e) => {
+                            eprintln!("\nFailed to package {}: {}", file_name, e);
+                            if !matches!(
+                                e.to_string().as_str(),
+                                "File is larger than 100MB. Use -L to package anyway"
+                            ) {
+                                println!("Press Enter to continue or Ctrl+C to abort...");
+                                let mut buf = String::new();
+                                if stdin().read_line(&mut buf).is_err() {
+                                    eprintln!("Failed to read input, aborting...");
+                                    process::exit(1);
+                                }
+                            }
+                        }
+                    }
+
+                    pb.inc(1);
+                }
+            })
+        })
+        .collect();
+
+    // Wait for all threads to complete
+    for handle in results {
+        handle.join().unwrap();
+    }
+
+    let final_success_count = success_count.load(std::sync::atomic::Ordering::Relaxed);
+
+    pb.finish_and_clear();
+    println!(
+        "Complete: {}/{} files packaged successfully",
+        final_success_count, total_count
+    );
+
+    if final_success_count != total_count {
+        process::exit(1);
+    }
+}
 
 pub fn handle_package_file(
     input_file: &str,
     output_file: &str,
     allow_large: bool,
     allow_empty_ver: bool,
+    custom_name: Option<String>,
     ver: Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let file_path = Path::new(input_file);
@@ -100,8 +313,17 @@ pub fn handle_package_file(
     let name = relative_path.display().to_string();
     let (parsed_name, parsed_version) = parse_name_and_version(&name);
 
-    // Always set a name - use the parsed name or the full filename if parsing failed
-    package.name = parsed_name;
+    // Always set a name - use the parsed name or the full filename if parsing failed, custom name if it exists.
+    package.name = match custom_name {
+        None => {
+            if parsed_name.is_empty() {
+                name.clone()
+            } else {
+                parsed_name
+            }
+        }
+        Some(n) => n,
+    };
 
     // Handle versioning
     if ver.is_some() {
@@ -122,6 +344,8 @@ pub fn handle_package_file(
         }
     }
 
+    package.version = package.version.trim().to_string();
+
     // Stage 4: Save package (80-100%)
     pb.set_prefix("Saving");
     pb.set_message("Writing package file...");
@@ -140,6 +364,7 @@ pub fn handle_package_file_atomic(
     output_file: &str,
     allow_large: bool,
     allow_empty_ver: bool,
+    custom_name: &Option<String>,
     ver: &Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let file_path = Path::new(input_file);
@@ -185,11 +410,16 @@ pub fn handle_package_file_atomic(
     let name = relative_path.display().to_string();
     let (parsed_name, parsed_version) = parse_name_and_version(&name);
 
-    // Always set a name - use the parsed name or the full filename if parsing failed
-    package.name = if parsed_name.is_empty() {
-        name.clone()
-    } else {
-        parsed_name
+    // Always set a name - use the parsed name or the full filename if parsing failed, custom name if it exists.
+    package.name = match custom_name {
+        None => {
+            if parsed_name.is_empty() {
+                name.clone()
+            } else {
+                parsed_name
+            }
+        }
+        Some(n) => n.to_string(),
     };
 
     // Handle versioning
@@ -210,6 +440,8 @@ pub fn handle_package_file_atomic(
             }
         }
     }
+
+    package.version = package.version.trim().to_string();
 
     package.save_package(Path::new(output_file))?;
     Ok(())
@@ -401,6 +633,7 @@ pub fn handle_package_dir(
         std::io::stdin().read_line(&mut name)?;
         package.name = name.trim().to_string();
     }
+
     if let Some(version) = config.version {
         package.version = version;
     } else if let Some(version) = ver {
@@ -411,6 +644,8 @@ pub fn handle_package_dir(
         std::io::stdin().read_line(&mut version)?;
         package.version = version.trim().to_string();
     }
+
+    package.version = package.version.trim().to_string();
 
     if let Some(install_dirs) = &config.install_dirs {
         for (file_path, target_dir) in install_dirs {
@@ -1020,8 +1255,7 @@ pub fn handle_remove_package(
 
             // Delete package files for all versions
             for version in vs.iter() {
-                let formatted_path =
-                    shelp::format_f(&file_path, database, &Some(version.clone()));
+                let formatted_path = shelp::format_f(&file_path, database, &Some(version.clone()));
                 let file_url = format!(
                     "https://api.github.com/repos/{}/{}/contents/{}",
                     owner, repo, formatted_path
@@ -1055,6 +1289,10 @@ pub fn handle_remove_package(
                                 .header("User-Agent", "spm-client")
                                 .json(&delete_data)
                                 .send()?;
+                            if !delete_response.status().is_success()
+                            {
+                                println!("An error occurred. Status: HTTP {}", delete_response.status());
+                            }
                         }
                     }
                 }
@@ -1142,6 +1380,7 @@ pub fn handle_dev_pub(
     dir: PathBuf,
     config: &mut Config,
     database: &db::Database,
+    custom_name: Option<String>,
 ) -> Result<(), Box<dyn Error>> {
     let _lock = Lock::new("build")?;
     // Check if directory exists
@@ -1337,7 +1576,8 @@ pub fn handle_dev_pub(
                 package_file.to_str().unwrap(),
                 true, // allow large in case
                 true, // Sets the version below, so this and | is fine.
-                None, //                                                <
+                custom_name, //                                               |
+                None, //                                                <-
             )?;
 
             let mut pack = Package::load_package(&package_file)

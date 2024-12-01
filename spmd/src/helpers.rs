@@ -1,24 +1,21 @@
-use spm_lib::db::Database;
 use crate::handlers::*;
-use spm_lib::patch::Patch;
 use spm_lib::config::Config;
+use spm_lib::db::Database;
+use spm_lib::helpers::prefer_root;
+use spm_lib::patch::Patch;
 use spm_lib::security::Security;
-use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
-use std::io::stdin;
 use std::io::Write;
 use std::process::exit;
 use std::{
     error::Error,
-    fs::{self},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     process,
 };
-use spm_lib::helpers::prefer_root;
 
 pub fn parse_name_and_version(filename: &str) -> (String, Option<String>) {
-    let patterns = ["-v", "_v", "v"];
+    let patterns = ["-v", "_v", "v", "&"];
 
     for pattern in patterns {
         if let Some(idx) = filename.to_lowercase().find(pattern) {
@@ -54,11 +51,7 @@ pub fn require_root(operation: &str) {
     }
 }
 
-pub fn get_matches(
-    matches: clap::ArgMatches,
-    config: &mut Config,
-    database: &mut Database,
-) {
+pub fn get_matches(matches: clap::ArgMatches, config: &mut Config, database: &mut Database) {
     let ver = matches.get_one::<String>("version").cloned();
     if matches.contains_id("dev-pub") {
         require_root("publishing from source");
@@ -66,7 +59,8 @@ pub fn get_matches(
             .get_one::<String>("dev-pub")
             .map(|s| PathBuf::from(s))
             .unwrap_or(env::current_dir().expect("Failed to get current directory"));
-        if let Err(e) = handle_dev_pub(dir, config, &database) {
+        let custom_name: Option<String> = matches.get_one::<String>("custom-name").cloned();
+        if let Err(e) = handle_dev_pub(dir, config, &database, custom_name) {
             eprintln!("Failed to publish: {}", e);
             process::exit(1);
         }
@@ -126,8 +120,16 @@ pub fn get_matches(
         let input_file = args.next().expect("Input file argument required");
         let output_file = args.next().expect("Output file argument required");
         let allow_large = matches.get_flag("allow-large");
+        let custom_name: Option<String> = matches.get_one::<String>("custom-name").cloned();
 
-        if let Err(e) = handle_package_file(input_file, output_file, allow_large, false, ver) {
+        if let Err(e) = handle_package_file(
+            input_file,
+            output_file,
+            allow_large,
+            false,
+            custom_name,
+            ver,
+        ) {
             eprintln!("Failed to package file: {}", e);
             process::exit(1);
         }
@@ -135,116 +137,17 @@ pub fn get_matches(
         let input_dir = args.next().expect("Input directory argument required");
         let output_dir = args.next().expect("Output directory argument required");
         let allow_large = matches.get_flag("allow-large");
+        let custom_name: Option<String> = matches.get_one::<String>("custom-name").cloned();
 
-        // Create output directory if it doesn't exist
-        if let Err(e) = fs::create_dir_all(output_dir) {
-            eprintln!("Failed to create output directory: {}", e);
-            process::exit(1);
-        }
+        mass_package(input_dir, output_dir, allow_large, &custom_name, &ver);
+    } else if let Some(mut args) = matches.get_many::<String>("mpack-exes") {
+        let input_dir = args.next().expect("Input directory argument required");
+        let output_file = args.next().expect("Output file argument required");
+        let allow_large = matches.get_flag("allow-large");
+        let custom_name: Option<String> = matches.get_one::<String>("custom-name").cloned();
 
-        println!("Processing files from {} to {}", input_dir, output_dir);
-
-        // Collect all files
-        let files: Vec<PathBuf> = walkdir::WalkDir::new(input_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .map(|entry| entry.path().to_path_buf())
-            .collect();
-
-        let total_count = files.len();
-        println!("Found {} files to process", total_count);
-
-        // Create main progress bar
-        let pb = ProgressBar::new(total_count as u64);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)\n{wide_msg}")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-
-        // Create atomic counter for successful operations
-        let success_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let pb = std::sync::Arc::new(pb);
-
-        // Determine number of threads
-        let num_threads = num_cpus::get().max(1);
-        let chunk_size = (files.len() + num_threads - 1) / num_threads;
-
-        // Process files in parallel
-        let results: Vec<_> = files
-            .chunks(chunk_size)
-            .map(|chunk| {
-                let pb = pb.clone();
-                let output_dir = output_dir.to_string();
-                let chunk = chunk.to_vec();
-                let success_count = success_count.clone();
-                let allow_large = allow_large;
-                let ver = ver.clone();
-
-                std::thread::spawn(move || {
-                    for file_path in chunk {
-                        let input_file = file_path.to_string_lossy().to_string();
-                        let file_name = file_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-
-                        let output_file = Path::new(&output_dir)
-                            .join(format!("{}.spm", file_name))
-                            .to_string_lossy()
-                            .to_string();
-
-                        pb.set_message(format!("Processing: {}", file_name));
-
-                        match handle_package_file_atomic(
-                            &input_file,
-                            &output_file,
-                            allow_large,
-                            false,
-                            &ver,
-                        ) {
-                            Ok(_) => {
-                                success_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            }
-                            Err(e) => {
-                                eprintln!("\nFailed to package {}: {}", file_name, e);
-                                if !matches!(
-                                    e.to_string().as_str(),
-                                    "File is larger than 100MB. Use -L to package anyway"
-                                ) {
-                                    println!("Press Enter to continue or Ctrl+C to abort...");
-                                    let mut buf = String::new();
-                                    if stdin().read_line(&mut buf).is_err() {
-                                        eprintln!("Failed to read input, aborting...");
-                                        process::exit(1);
-                                    }
-                                }
-                            }
-                        }
-
-                        pb.inc(1);
-                    }
-                })
-            })
-            .collect();
-
-        // Wait for all threads to complete
-        for handle in results {
-            handle.join().unwrap();
-        }
-
-        let final_success_count = success_count.load(std::sync::atomic::Ordering::Relaxed);
-
-        pb.finish_and_clear();
-        println!(
-            "Complete: {}/{} files packaged successfully",
-            final_success_count, total_count
-        );
-
-        if final_success_count != total_count {
+        if let Err(e) = package_exes(input_dir, output_file, allow_large, custom_name, ver) {
+            eprintln!("Failed to create package: {}", e);
             process::exit(1);
         }
     } else if let Some(mut args) = matches.get_many::<String>("verify-package") {
@@ -262,15 +165,27 @@ pub fn get_matches(
             download(&database, p, o, &req_ver, None).expect("Failed to download package.");
         }
     } else if let Some(package_file) = matches.get_one::<String>("publish") {
-        let (_, _, _, _token_lock) =
-            prefer_root("publish a package", matches.get_flag("force-op"), false, false, false, true);
+        let (_, _, _, _token_lock) = prefer_root(
+            "publish a package",
+            matches.get_flag("force-op"),
+            false,
+            false,
+            false,
+            true,
+        );
         if let Err(e) = handle_publish_package(package_file, &database, config) {
             eprintln!("Failed to publish package: {}", e);
             process::exit(1);
         }
     } else if let Some(info) = matches.get_many::<String>("unpublish") {
-        let (_, _, _, _token_lock) =
-            prefer_root("unpublish packages", matches.get_flag("force-op"), false, false, false, true);
+        let (_, _, _, _token_lock) = prefer_root(
+            "unpublish packages",
+            matches.get_flag("force-op"),
+            false,
+            false,
+            false,
+            true,
+        );
         let (packages, vers) = split_values(info);
         let mut pas_vers: Option<Vec<String>> = None;
         if vers.len() > 0 {
@@ -286,8 +201,14 @@ pub fn get_matches(
             process::exit(1);
         }
     } else if let Some(output) = matches.get_one::<String>("mirror-repo") {
-        let (_lock, _, _, _) =
-            prefer_root("mirror the repository", matches.get_flag("force-op"), true, false, false, false);
+        let (_lock, _, _, _) = prefer_root(
+            "mirror the repository",
+            matches.get_flag("force-op"),
+            true,
+            false,
+            false,
+            false,
+        );
         database.update_db().expect("Failed to update databse");
         let packages = database
             .list_all()

@@ -2774,7 +2774,7 @@ dependencies = [
 
 [[package]]
 name = "spmc"
-version = "3.14.28"
+version = "3.15.28"
 dependencies = [
  "anyhow",
  "ar",
@@ -2791,7 +2791,7 @@ dependencies = [
 
 [[package]]
 name = "spmd"
-version = "3.14.28"
+version = "3.15.28"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
