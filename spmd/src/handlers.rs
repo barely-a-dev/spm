@@ -94,12 +94,10 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
     if let Some(name) = custom_name {
         package.name = name;
     } else {
-        // Use directory name as package name if no custom name provided
-        package.name = PathBuf::from(input_dir)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unnamed")
-            .to_string();
+        println!("Please enter the package name:");
+        let mut buf = "".to_string();
+        stdin().read_line(&mut buf)?;
+        package.name = buf.to_string();
     }
 
     // Set package version
@@ -108,7 +106,16 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
     } else {
         // If no version specified, try to extract from output file name or use default
         let (_, file_version) = parse_name_and_version(output_file);
-        package.version = file_version.unwrap_or_else(|| "1.0.0".to_string());
+        package.version = match file_version
+        {
+            None => {
+                println!("No version found. Please enter the package version:");
+                let mut buf = "".to_string();
+                stdin().read_line(&mut buf)?;
+                buf.to_string()
+            }
+            Some(v) => v,
+        }
     }
 
     // Save the package
