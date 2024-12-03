@@ -267,7 +267,6 @@ fn download(
 
     let parts: Vec<&str> = database.src().split('/').collect();
     let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
-    println!("{:#?}", database);
 
     if database.exact_search(package_name.to_string()).is_none() {
         println!("Package {} not found.", package_name);

@@ -49,6 +49,7 @@ use crate::db::Cache;
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::CString;
+use std::fmt::Debug;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::unix::fs::chown;
@@ -59,7 +60,7 @@ use zstd::{decode_all, encode_all};
 const MAGIC: &[u8] = b"SPKG";
 const VERSION: u8 = 2;
 
-//TODO: dependencies, alternate package versions aside from most recent (do before dependencies), build scripts, pre/post install scripts, downgrade packages/choose specific versions, package groups
+//TODO: dependencies, build scripts, pre/post install scripts, package groups
 
 pub struct Dependency {
     pub name: String,
@@ -135,12 +136,19 @@ pub struct Package {
     pub name: String,
     pub dependencies: Vec<Dependency>,
 }
-
+#[derive(Clone)]
 pub struct FileEntry {
     pub path: PathBuf,
     pub permissions: u32,
     pub contents: Vec<u8>,
     pub target_dir: Option<PathBuf>,
+}
+
+impl Debug for FileEntry
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FileEntry {{\npath: {},\npermissions: {},\ntarget_dir: {}\n}}", self.path.display(), self.permissions, self.target_dir.clone().unwrap_or("NONE".into()).display())
+    }
 }
 
 impl Package {

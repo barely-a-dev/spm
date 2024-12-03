@@ -270,7 +270,7 @@ pub struct FileState {
     pub content: Option<Vec<u8>>, // Original content of the file
     pub permissions: Option<u32>, // Original permissions
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PackageState {
     pub installed_files: Vec<String>, // Files installed by the package
     pub removed_files: HashMap<String, FileState>, // Files removed by the package
@@ -278,6 +278,7 @@ pub struct PackageState {
     pub patched_files: HashMap<String, FileState>, // Original state of patched files
     pub version: String,              // Package version
 }
+#[derive(Clone)]
 pub struct Cache {
     packages: HashMap<String, PackageState>,
 }
@@ -330,6 +331,10 @@ impl Cache {
         }
         cache
     }
+    pub fn pkgs(&self) -> &HashMap<String, PackageState>
+    {
+        &self.packages
+    }
     pub fn check_for_deps(&self, deps: Vec<Dependency>) -> Vec<String> {
         let mut missing: Vec<String> = Vec::new();
         for dep in deps {
@@ -344,7 +349,6 @@ impl Cache {
         let path = PathBuf::from("/var/cache/spm/spm.cache");
         let mut file = File::create(&path)?;
         for (package_name, state) in &self.packages {
-            println!("{}:\n\t{:#?}", package_name, state);
             // Write package name and version
             write!(file, "{}&{}=", package_name, state.version.trim())?;
             // Write installed files

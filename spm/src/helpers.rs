@@ -1,10 +1,13 @@
 use spm_lib::db::Cache;
 use spm_lib::db::Database;
+use spm_lib::package::FileEntry;
 use crate::handlers::*;
 use spm_lib::lock::Lock;
 use spm_lib::patch::Patch;
 use spm_lib::config::Config;
+use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::exit;
 use std::{
     error::Error,
@@ -56,7 +59,7 @@ if let Some(mut files) = matches.get_many::<String>("install-patch") {
         let package_path = args.next().expect("Package file argument required");
         let target_dir = args.next().map(|s| s.as_str()); // Convert to Option<&str>
 
-        if let Err(e) = handle_install_package(package_path, target_dir, cache) {
+        if let Err(e) = handle_install_package(package_path, target_dir, cache, matches.get_flag("force-op")) {
             eprintln!("Failed to install package: {}", e);
             process::exit(1);
         }
@@ -143,7 +146,7 @@ if let Some(mut files) = matches.get_many::<String>("install-patch") {
                 let package = packages[i].as_str();
                 if package.starts_with("./") || package.ends_with(".spm") {
                     // Local package installation
-                    match handle_install_package(package, None, cache) {
+                    match handle_install_package(package, None, cache, matches.get_flag("force-op")) {
                         Ok(_) => {
                             println!("Successfully installed local package: {}", package);
                             success_count += 1;
@@ -172,7 +175,7 @@ if let Some(mut files) = matches.get_many::<String>("install-patch") {
                     let package = packages[i].as_str();
                     let version = vers.get(i).cloned();
 
-                    match download_and_install_package(package, database, cache, &version, &client)
+                    match download_and_install_package(package, database, cache, &version, &client, matches.get_flag("force-op"))
                     {
                         Ok(_) => {
                             success_count += 1;
@@ -222,11 +225,9 @@ if let Some(mut files) = matches.get_many::<String>("install-patch") {
         if let Some(packages) = matches.get_many::<String>("update").filter(|p| p.len() > 0) {
             // Update specific packages
             let packages: Vec<String> = packages.map(|s| s.to_string()).collect();
-            println!("pg: {:#?}", packages);
             let mut updated = false;
 
             for (name, current, latest) in &updates {
-                println!("{:#?}", updates);
                 let package_name = name.trim_end_matches(".spm");
                 if packages.contains(&package_name.to_string()) {
                     println!("Updating {}: {} -> {}", package_name, current, latest);
@@ -248,6 +249,7 @@ if let Some(mut files) = matches.get_many::<String>("install-patch") {
                         cache,
                         &database.get_recent(&name),
                         &client,
+                        matches.get_flag("force-op"),
                     ) {
                         Ok(_) => {
                             println!("Successfully updated {}", package_name);
@@ -286,6 +288,7 @@ if let Some(mut files) = matches.get_many::<String>("install-patch") {
                     cache,
                     &database.get_recent(&name),
                     &client,
+                    matches.get_flag("force-op"),
                 ) {
                     Ok(_) => {
                         success_count += 1;
@@ -417,7 +420,6 @@ fn download(
 
     let parts: Vec<&str> = database.src().split('/').collect();
     let (owner, repo) = (parts[parts.len() - 2], parts[parts.len() - 1]);
-    println!("{:#?}", database);
 
     if database.exact_search(package_name.to_string()).is_none() {
         println!("Package {} not found.", package_name);
@@ -478,6 +480,7 @@ fn download_and_install_package(
     cache: &mut Cache,
     ver: &Option<String>,
     client: &reqwest::blocking::Client,
+    force_op: bool,
 ) -> Result<(), Box<dyn Error>> {
     // Check if package is already installed
     if cache.has_package(package_name) {
@@ -491,7 +494,7 @@ fn download_and_install_package(
     download(database, package_name, &temp_path, ver, Some(client))?;
 
     // Install downloaded package
-    handle_install_package(&temp_path, None, cache)?;
+    handle_install_package(&temp_path, None, cache, force_op)?;
 
     // Clean up
     if let Err(e) = fs::remove_file(&temp_path) {
@@ -500,4 +503,99 @@ fn download_and_install_package(
 
     println!("Package {} installed successfully", package_name);
     Ok(())
+}
+
+pub fn parse_files(files: &HashMap<PathBuf, FileEntry>) -> HashMap<PathBuf, FileEntry>
+{
+    let mut res: HashMap<PathBuf, FileEntry> = HashMap::new();
+    let bin = PathBuf::from("/usr/bin");
+    for (file, info) in files
+    {
+        if info.permissions & 0o111 != 0
+        {
+            res.insert(bin.join(file), info.clone());
+        }
+        else {
+            res.insert(file.clone(), info.clone());
+        }
+    }
+    res
+}
+
+pub fn are_patches_compatible(original_content: &[u8], new_patch: &Patch) -> bool {
+    // Create a copy of the original content to simulate patch application
+    let test_content = original_content.to_vec();
+
+    // Sort sections by start position
+    let mut sorted_sections = new_patch.sections.clone();
+    sorted_sections.sort_by_key(|s| s.start);
+
+    // Check for invalid patch conditions
+
+    // 1. Check for overlapping sections
+    for window in sorted_sections.windows(2) {
+        if window[0].end > window[1].start {
+            return false;
+        }
+    }
+
+    // 2. Check if any section extends beyond file bounds
+    if sorted_sections
+        .iter()
+        .any(|s| s.start > test_content.len() || s.end > test_content.len())
+    {
+        return false;
+    }
+
+    // 3. Check if sections are properly ordered
+    let mut current_pos = 0;
+    for section in &sorted_sections {
+        if section.start < current_pos {
+            return false;
+        }
+        current_pos = section.end;
+    }
+
+    // Try to apply the patch
+    let mut result = Vec::new();
+    current_pos = 0;
+
+    for section in sorted_sections {
+        // Copy unchanged bytes before patch
+        result.extend_from_slice(&test_content[current_pos..section.start]);
+        // Apply patch
+        result.extend_from_slice(&section.contents);
+        current_pos = section.end;
+    }
+
+    // Copy remaining bytes after last patch
+    result.extend_from_slice(&test_content[current_pos..]);
+
+    // If we got here, the patch can be applied without errors
+    // Now we need to verify that the resulting file is valid
+    // This could include additional checks specific to your use case
+
+    // For basic compatibility, we'll check that:
+    // 1. The file size hasn't changed dramatically (within 50% of original)
+    let size_ratio = result.len() as f64 / original_content.len() as f64;
+    if size_ratio < 0.5 || size_ratio > 1.5 {
+        return false;
+    }
+
+    // 2. The file still contains a minimum percentage of original content
+    let mut matching_bytes = 0;
+    let min_len = original_content.len().min(result.len());
+    for i in 0..min_len {
+        if original_content[i] == result[i] {
+            matching_bytes += 1;
+        }
+    }
+
+    let similarity_ratio = matching_bytes as f64 / original_content.len() as f64;
+    if similarity_ratio < 0.3 {
+        // At least 30% similar
+        return false;
+    }
+
+    true
 }
