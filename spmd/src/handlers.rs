@@ -3,7 +3,6 @@ use crate::helpers::parse_name_and_version;
 use crate::PackageConfig;
 use base64::engine::general_purpose;
 use base64::Engine;
-use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::blocking::Response;
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -21,60 +20,67 @@ use std::{
     path::{Path, PathBuf},
     process::{self, exit},
 };
+use utls::prog::{PBStyle, Spinner, PB};
 use uuid::Uuid;
 
-pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custom_name: Option<String>, ver: Option<String>) -> Result<(), Box<dyn Error>> {
+pub fn package_exes(
+    input_dir: &str,
+    output_file: &str,
+    allow_large: bool,
+    custom_name: Option<String>,
+    ver: Option<String>,
+) -> Result<(), Box<dyn Error>> {
     let mut package = Package::new();
-    
+
     // Create progress bar
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.green} [{elapsed_precise}] {wide_msg}")
-            .unwrap()
-    );
+    let mut pb = PB::builder(100)
+        .style(PBStyle::modern())
+        .spinner(Some(Spinner::modern()))
+        .message("{wide_msg}")
+        .build();
 
     // Scan directory for executables
-    pb.set_message("Scanning for executables...");
-    
+    pb.msg("Scanning for executables...");
+
     let files: Vec<PathBuf> = walkdir::WalkDir::new(input_dir)
-    .max_depth(1)
-    .follow_links(true)
-    .into_iter()
-    .filter_map(|e| e.ok())
-    .filter(|e| {
-        if let Ok(metadata) = e.metadata() {
-            // Check if it's a regular file and is executable
-            metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0)
-        } else {
-            false
-        }
-    })
-    .map(|entry| entry.path().to_path_buf())
-    .collect();
+        .max_depth(1)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            if let Ok(metadata) = e.metadata() {
+                metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0)
+            } else {
+                false
+            }
+        })
+        .map(|entry| entry.path().to_path_buf())
+        .collect();
 
     if files.is_empty() {
         return Err("No executable files found in directory".into());
     }
 
-    pb.set_message(format!("Found {} executable files", files.len()));
+    pb.msg(format!("Found {} executable files", files.len()));
+    pb.disp();
 
     // Process each executable
     for file_path in files {
         let metadata = fs::metadata(&file_path)?;
-        
-        // Check file size if needed
+
         if !allow_large && metadata.len() > 100_000_000 {
-            return Err(format!("File {} is larger than 100MB. Use -L to package anyway", file_path.display()).into());
+            return Err(format!(
+                "File {} is larger than 100MB. Use -L to package anyway",
+                file_path.display()
+            )
+            .into());
         }
 
         let contents = fs::read(&file_path)?;
         let permissions = metadata.permissions().mode();
-        
-        // Use just the file name as the relative path
+
         let relative_path = PathBuf::from(file_path.file_name().ok_or("Invalid file name")?);
 
-        // Check if file requires root permissions
         if file_path.starts_with("/usr/bin")
             || file_path.starts_with("/usr/sbin")
             || permissions & 0o4000 != 0
@@ -83,10 +89,10 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
             package.requires_root = true;
         }
 
-        // All executables go to /usr/bin
         let target_dir = Some(PathBuf::from("/usr/bin"));
 
-        pb.set_message(format!("Adding {} to package...", relative_path.display()));
+        pb.msg(format!("Adding {} to package...", relative_path.display()));
+        pb.disp();
         package.add_file(relative_path, permissions, contents, target_dir);
     }
 
@@ -95,7 +101,7 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
         package.name = name;
     } else {
         println!("Please enter the package name:");
-        let mut buf = "".to_string();
+        let mut buf = String::new();
         stdin().read_line(&mut buf)?;
         package.name = buf.trim().to_string();
     }
@@ -104,13 +110,11 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
     if let Some(version) = ver {
         package.version = version;
     } else {
-        // If no version specified, try to extract from output file name or use default
         let (_, file_version) = parse_name_and_version(output_file);
-        package.version = match file_version
-        {
+        package.version = match file_version {
             None => {
                 println!("No version found. Please enter the package version:");
-                let mut buf = "".to_string();
+                let mut buf = String::new();
                 stdin().read_line(&mut buf)?;
                 buf.trim().to_string()
             }
@@ -119,15 +123,21 @@ pub fn package_exes(input_dir: &str, output_file: &str, allow_large: bool, custo
     }
 
     // Save the package
-    pb.set_message("Saving package file...");
+    pb.msg("Saving package file...");
+    pb.disp();
     package.save_package(Path::new(output_file))?;
 
-    pb.finish_with_message(format!("Package created successfully: {}", output_file));
+    pb.finish_with_message(&format!("Package created successfully: {}", output_file));
     Ok(())
 }
 
-pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom_name: &Option<String>, ver: &Option<String>) { // (More args need to be references due to using ops that repeat)
-    // Create output directory if it doesn't exist
+pub fn mass_package(
+    input_dir: &str,
+    output_dir: &str,
+    allow_large: bool,
+    custom_name: &Option<String>,
+    ver: &Option<String>,
+) {
     if let Err(e) = fs::create_dir_all(output_dir) {
         eprintln!("Failed to create output directory: {}", e);
         process::exit(1);
@@ -135,7 +145,6 @@ pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom
 
     println!("Processing files from {} to {}", input_dir, output_dir);
 
-    // Collect all files
     let files: Vec<PathBuf> = walkdir::WalkDir::new(input_dir)
         .follow_links(true)
         .into_iter()
@@ -148,23 +157,17 @@ pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom
     println!("Found {} files to process", total_count);
 
     // Create main progress bar
-    let pb = ProgressBar::new(total_count as u64);
-    pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)\n{wide_msg}")
-                    .unwrap()
-                    .progress_chars("#>-"),
-            );
+    let pb = PB::builder(total_count)
+        .style(PBStyle::modern())
+        .message("{pos}/{len} ({percent}%)\n{wide_msg}")
+        .build();
 
-    // Create atomic counter for successful operations
     let success_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let pb = std::sync::Arc::new(pb);
+    let pb = std::sync::Arc::new(std::sync::Mutex::new(pb));
 
-    // Determine number of threads
     let num_threads = num_cpus::get().max(1);
     let chunk_size = (files.len() + num_threads - 1) / num_threads;
 
-    // Process files in parallel
     let results: Vec<_> = files
         .chunks(chunk_size)
         .map(|chunk| {
@@ -189,7 +192,10 @@ pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom
                         .to_string_lossy()
                         .to_string();
 
-                    pb.set_message(format!("Processing: {}", file_name));
+                    if let Ok(mut guard) = pb.lock() {
+                        guard.style.message = format!("Processing: {}", file_name);
+                        guard.disp();
+                    }
 
                     match handle_package_file_atomic(
                         &input_file,
@@ -208,7 +214,7 @@ pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom
                                 e.to_string().as_str(),
                                 "File is larger than 100MB. Use -L to package anyway"
                             ) {
-                                println!("Press Enter to continue or Ctrl+C to abort...");
+                                println!("Press enter yto continue or Ctrl+C to abort...");
                                 let mut buf = String::new();
                                 if stdin().read_line(&mut buf).is_err() {
                                     eprintln!("Failed to read input, aborting...");
@@ -218,20 +224,25 @@ pub fn mass_package(input_dir: &str, output_dir: &str, allow_large: bool, custom
                         }
                     }
 
-                    pb.inc(1);
+                    if let Ok(mut guard) = pb.lock() {
+                        guard.inc();
+                        guard.disp();
+                    }
                 }
             })
         })
         .collect();
 
-    // Wait for all threads to complete
     for handle in results {
         handle.join().unwrap();
     }
 
     let final_success_count = success_count.load(std::sync::atomic::Ordering::Relaxed);
 
-    pb.finish_and_clear();
+    if let Ok(mut guard) = pb.lock() {
+        guard.finish_and_clear();
+    }
+
     println!(
         "Complete: {}/{} files packaged successfully",
         final_success_count, total_count
@@ -253,19 +264,15 @@ pub fn handle_package_file(
     let file_path = Path::new(input_file);
     let mut package = Package::new();
 
-    let pb = ProgressBar::new(100);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template(
-                "{prefix:.bold.dim} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}% {wide_msg}",
-            )
-            .unwrap()
-            .progress_chars("#>-"),
-    );
+    let mut pb = PB::builder(100)
+        .style(PBStyle::modern())
+        .spinner(Some(Spinner::modern()))
+        .message("{wide_msg}")
+        .build();
 
     // Stage 1: Check file (0-10%)
-    pb.set_prefix("Checking");
-    pb.set_position(0);
+    pb.msg("Checking file...");
+    pb.set_current(0);
 
     if !file_path.exists() {
         return Err("Input file does not exist".into());
@@ -279,20 +286,20 @@ pub fn handle_package_file(
         return Err("File is larger than 100MB. Use -L to package anyway".into());
     }
 
-    pb.set_position(10);
+    pb.set_current(10);
 
     // Stage 2: Read file (10-50%)
-    pb.set_prefix("Reading");
-    pb.set_message("Reading file contents...");
+    pb.msg("Reading file contents...");
+    pb.disp();
 
     let contents = fs::read(file_path)?;
     let permissions = metadata.permissions().mode();
 
-    pb.set_position(50);
+    pb.set_current(50);
 
     // Stage 3: Process file (50-80%)
-    pb.set_prefix("Processing");
-    pb.set_message("Adding file to package...");
+    pb.msg("Adding file to package...");
+    pb.disp();
 
     // Use just the file name as the relative path
     let relative_path = PathBuf::from(file_path.file_name().ok_or("Invalid file name")?);
@@ -314,7 +321,7 @@ pub fn handle_package_file(
 
     package.add_file(relative_path.clone(), permissions, contents, target_dir);
 
-    pb.set_position(80);
+    pb.set_current(80);
 
     // Name is just the filename for single-file packages
     let name = relative_path.display().to_string();
@@ -354,13 +361,235 @@ pub fn handle_package_file(
     package.version = package.version.trim().to_string();
 
     // Stage 4: Save package (80-100%)
-    pb.set_prefix("Saving");
-    pb.set_message("Writing package file...");
+    pb.msg("Writing package file...");
+    pb.disp();
 
     package.save_package(Path::new(output_file))?;
 
-    pb.set_position(100);
-    pb.finish_with_message(format!("Package created successfully: {}", output_file));
+    pb.finish_with_message(&format!("Package created successfully: {}", output_file));
+
+    Ok(())
+}
+
+pub fn handle_package_dir(
+    package_dir: &str,
+    output_file: &str,
+    allow_large: bool,
+    ver: Option<String>,
+) -> Result<(), Box<dyn Error>> {
+    let dir_path = Path::new(package_dir);
+    let mut package = Package::new();
+
+    let mut pb = PB::builder(100)
+        .style(PBStyle::modern())
+        .spinner(Some(Spinner::modern()))
+        .message("{wide_msg}")
+        .build();
+
+    // Stage 1: Load configuration (5%)
+    pb.msg("Loading configuration...");
+    pb.set_current(0);
+
+    let config_path = dir_path.join("pkg.toml");
+    let config = if config_path.exists() {
+        pb.msg("Reading package configuration...");
+        let config_str = fs::read_to_string(&config_path)?;
+        toml::from_str::<PackageConfig>(&config_str)?
+    } else {
+        PackageConfig {
+            name: None,
+            version: None,
+            file_permissions: None,
+            files_to_remove: None,
+            files_to_empty: None,
+            install_dirs: None,
+        }
+    };
+
+    pb.set_current(5);
+
+    // Stage 2: Count files (10%)
+    pb.msg("Counting files...");
+    pb.disp();
+
+    let total_files: u64 = walkdir::WalkDir::new(dir_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .count() as u64;
+
+    pb.set_current(10);
+
+    // Stage 3: Process files (10-80%)
+    pb.msg("Processing files...");
+    pb.disp();
+
+    let files_progress_step = 70.0 / total_files as f64;
+    let mut current_progress = 10;
+
+    for entry in walkdir::WalkDir::new(dir_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+
+        // Skip if file is a symlink
+        if path.is_symlink() {
+            current_progress = (current_progress as f64 + files_progress_step) as u64;
+            pb.set_current(current_progress as usize);
+            continue;
+        }
+
+        let relative_path = match path.strip_prefix(dir_path) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Warning: Skipping file {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        let message = format!("Processing {}...", relative_path.display());
+        pb.msg(&message);
+        pb.disp();
+
+        // Skip pkg.toml and binary files over 100MB
+        if relative_path == Path::new("pkg.toml") {
+            current_progress = (current_progress as f64 + files_progress_step) as u64;
+            pb.set_current(current_progress as usize);
+            continue;
+        }
+
+        // Get file metadata with better error handling
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Cannot read metadata for {}: {}",
+                    path.display(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        // Skip files larger than 100MB
+        if !allow_large && metadata.len() > 100_000_000 {
+            eprintln!(
+                "Warning: Skipping large file {}: {} bytes",
+                path.display(),
+                metadata.len()
+            );
+            continue;
+        }
+
+        pb.msg(format!("{} Reading file contents...", &message));
+        pb.disp();
+
+        // Read file contents with timeout protection
+        let contents = match std::fs::read(path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Warning: Cannot read file {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        let mut permissions = metadata.permissions().mode();
+
+        if let Some(ref perm_map) = config.file_permissions {
+            if let Some(&configured_perms) =
+                perm_map.get(&relative_path.to_string_lossy().to_string())
+            {
+                permissions = configured_perms;
+            }
+        }
+
+        if path.starts_with("/usr/bin")
+            || path.starts_with("/usr/sbin")
+            || permissions & 0o4000 != 0
+            || permissions & 0o2000 != 0
+        {
+            package.requires_root = true;
+        }
+
+        let target_dir = if permissions & 0o111 != 0 {
+            Some(PathBuf::from("/usr/bin"))
+        } else {
+            None
+        };
+
+        package.add_file(
+            PathBuf::from(relative_path.file_name().ok_or("Invalid file name")?),
+            permissions,
+            contents,
+            target_dir,
+        );
+
+        current_progress = (current_progress as f64 + files_progress_step) as u64;
+        pb.set_current(current_progress as usize);
+    }
+
+    // Stage 4: Process configuration entries (80-90%)
+    pb.msg("Processing configuration...");
+    pb.set_current(80);
+
+    if let Some(removes) = config.files_to_remove {
+        pb.msg("Processing files to remove...");
+        pb.disp();
+        for path in removes {
+            package.mark_for_removal(PathBuf::from(path));
+        }
+    }
+
+    if let Some(empties) = config.files_to_empty {
+        pb.msg("Processing files to empty...");
+        pb.disp();
+        for path in empties {
+            package.mark_for_empty(PathBuf::from(path));
+        }
+    }
+
+    if let Some(name) = config.name {
+        package.name = name;
+    } else {
+        // Ask for package details if no config file
+        println!("No pkg.toml found. Enter package name:");
+        let mut name = String::new();
+        std::io::stdin().read_line(&mut name)?;
+        package.name = name.trim().to_string();
+    }
+
+    if let Some(version) = config.version {
+        package.version = version;
+    } else if let Some(version) = ver {
+        package.version = version;
+    } else {
+        println!("Enter package version (e.g. 1.0.0):");
+        let mut version = String::new();
+        std::io::stdin().read_line(&mut version)?;
+        package.version = version.trim().to_string();
+    }
+
+    package.version = package.version.trim().to_string();
+
+    if let Some(install_dirs) = &config.install_dirs {
+        for (file_path, target_dir) in install_dirs {
+            if let Some(entry) = package.files.get_mut(Path::new(file_path)) {
+                entry.target_dir = Some(PathBuf::from(target_dir));
+            }
+        }
+    }
+
+    pb.set_current(90);
+
+    // Stage 5: Save package (90-100%)
+    pb.msg("Writing package file...");
+    pb.disp();
+    package.save_package(Path::new(output_file))?;
+
+    pb.set_current(100);
+    pb.finish_with_message(&format!("Package created successfully: {}", output_file));
 
     Ok(())
 }
@@ -451,227 +680,6 @@ pub fn handle_package_file_atomic(
     package.version = package.version.trim().to_string();
 
     package.save_package(Path::new(output_file))?;
-    Ok(())
-}
-
-pub fn handle_package_dir(
-    package_dir: &str,
-    output_file: &str,
-    allow_large: bool,
-    ver: Option<String>,
-) -> Result<(), Box<dyn Error>> {
-    let dir_path = Path::new(package_dir);
-    let mut package = Package::new();
-
-    let pb = ProgressBar::new(100);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template(
-                "{prefix:.bold.dim} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}% {wide_msg}",
-            )
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-
-    // Stage 1: Load configuration (5%)
-    pb.set_prefix("Loading config");
-    pb.set_position(0);
-
-    let config_path = dir_path.join("pkg.toml");
-    let config = if config_path.exists() {
-        pb.set_message("Reading package configuration...");
-        let config_str = fs::read_to_string(&config_path)?;
-        toml::from_str::<PackageConfig>(&config_str)?
-    } else {
-        PackageConfig {
-            name: None,
-            version: None,
-            file_permissions: None,
-            files_to_remove: None,
-            files_to_empty: None,
-            install_dirs: None,
-        }
-    };
-
-    pb.set_position(5);
-
-    // Stage 2: Count files (10%)
-    pb.set_prefix("Scanning");
-    pb.set_message("Counting files...");
-
-    let total_files: u64 = walkdir::WalkDir::new(dir_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .count() as u64;
-
-    pb.set_position(10);
-
-    // Stage 3: Process files (10-80%)
-    pb.set_prefix("Processing");
-    let files_progress_step = 70.0 / total_files as f64;
-    let mut current_progress = 10;
-
-    for entry in walkdir::WalkDir::new(dir_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-    {
-        let path = entry.path();
-
-        // Skip if file is a symlink
-        if path.is_symlink() {
-            current_progress = (current_progress as f64 + files_progress_step) as u64;
-            pb.set_position(current_progress);
-            continue;
-        }
-
-        let relative_path = match path.strip_prefix(dir_path) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Warning: Skipping file {}: {}", path.display(), e);
-                continue;
-            }
-        };
-
-        let message = format!("Processing {}...", relative_path.display());
-        pb.set_message(message.clone());
-
-        // Skip pkg.toml and binary files over 100MB
-        if relative_path == Path::new("pkg.toml") {
-            current_progress = (current_progress as f64 + files_progress_step) as u64;
-            pb.set_position(current_progress);
-            continue;
-        }
-
-        // Get file metadata with better error handling
-        let metadata = match entry.metadata() {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!(
-                    "Warning: Cannot read metadata for {}: {}",
-                    path.display(),
-                    e
-                );
-                continue;
-            }
-        };
-
-        // Skip files larger than 100MB
-        if !allow_large && metadata.len() > 100_000_000 {
-            eprintln!(
-                "Warning: Skipping large file {}: {} bytes",
-                path.display(),
-                metadata.len()
-            );
-            continue;
-        }
-
-        pb.set_message(format!("{} Reading file contents...", &message));
-
-        // Read file contents with timeout protection
-        let contents = match std::fs::read(path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("Warning: Cannot read file {}: {}", path.display(), e);
-                continue;
-            }
-        };
-
-        let mut permissions = metadata.permissions().mode();
-
-        if let Some(ref perm_map) = config.file_permissions {
-            if let Some(&configured_perms) =
-                perm_map.get(&relative_path.to_string_lossy().to_string())
-            {
-                permissions = configured_perms;
-            }
-        }
-
-        if path.starts_with("/usr/bin")
-            || path.starts_with("/usr/sbin")
-            || permissions & 0o4000 != 0
-            || permissions & 0o2000 != 0
-        {
-            package.requires_root = true;
-        }
-
-        let target_dir = if permissions & 0o111 != 0 {
-            Some(PathBuf::from("/usr/bin"))
-        } else {
-            None
-        };
-
-        package.add_file(
-            PathBuf::from(relative_path.file_name().ok_or("Invalid file name")?),
-            permissions,
-            contents,
-            target_dir,
-        );
-
-        current_progress = (current_progress as f64 + files_progress_step) as u64;
-        pb.set_position(current_progress);
-    }
-
-    // Stage 4: Process configuration entries (80-90%)
-    pb.set_prefix("Configuring");
-    pb.set_position(80);
-
-    if let Some(removes) = config.files_to_remove {
-        pb.set_message("Processing files to remove...");
-        for path in removes {
-            package.mark_for_removal(PathBuf::from(path));
-        }
-    }
-
-    if let Some(empties) = config.files_to_empty {
-        pb.set_message("Processing files to empty...");
-        for path in empties {
-            package.mark_for_empty(PathBuf::from(path));
-        }
-    }
-
-    if let Some(name) = config.name {
-        package.name = name;
-    } else {
-        // Ask for package details if no config file
-        println!("No pkg.toml found. Enter package name:");
-        let mut name = String::new();
-        std::io::stdin().read_line(&mut name)?;
-        package.name = name.trim().to_string();
-    }
-
-    if let Some(version) = config.version {
-        package.version = version;
-    } else if let Some(version) = ver {
-        package.version = version;
-    } else {
-        println!("Enter package version (e.g. 1.0.0):");
-        let mut version = String::new();
-        std::io::stdin().read_line(&mut version)?;
-        package.version = version.trim().to_string();
-    }
-
-    package.version = package.version.trim().to_string();
-
-    if let Some(install_dirs) = &config.install_dirs {
-        for (file_path, target_dir) in install_dirs {
-            if let Some(entry) = package.files.get_mut(Path::new(file_path)) {
-                entry.target_dir = Some(PathBuf::from(target_dir));
-            }
-        }
-    }
-
-    pb.set_position(90);
-
-    // Stage 5: Save package (90-100%)
-    pb.set_prefix("Saving");
-    pb.set_message("Writing package file...");
-    package.save_package(Path::new(output_file))?;
-
-    pb.set_position(100);
-    pb.finish_with_message(format!("Package created successfully: {}", output_file));
-
     Ok(())
 }
 
@@ -1297,9 +1305,11 @@ pub fn handle_remove_package(
                                 .header("User-Agent", "spm-client")
                                 .json(&delete_data)
                                 .send()?;
-                            if !delete_response.status().is_success()
-                            {
-                                println!("An error occurred. Status: HTTP {}", delete_response.status());
+                            if !delete_response.status().is_success() {
+                                println!(
+                                    "An error occurred. Status: HTTP {}",
+                                    delete_response.status()
+                                );
                             }
                         }
                     }
@@ -1582,10 +1592,10 @@ pub fn handle_dev_pub(
             handle_package_file(
                 output.to_str().unwrap(),
                 package_file.to_str().unwrap(),
-                true, // allow large in case
-                true, // Sets the version below, so this and | is fine.
+                true,        // allow large in case
+                true,        // Sets the version below, so this and | is fine.
                 custom_name, //                                               |
-                None, //                                                <-
+                None,        //                                                <-
             )?;
 
             let mut pack = Package::load_package(&package_file)

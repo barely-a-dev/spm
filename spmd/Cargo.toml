@@ -11,7 +11,6 @@ spm_lib = { path = "../lib" }
 anyhow.workspace = true
 base64.workspace = true
 dirs.workspace = true
-indicatif = "0.17.7"
 libc.workspace = true
 num_cpus = "1.16.0"
 reqwest.workspace = true
@@ -20,3 +19,4 @@ toml = "0.8.10"
 uuid = {version = "1.7.0", features = ["v4"]}
 walkdir = "2.4.0"
 zstd.workspace = true
+utls = { version = "0.9.7", features = ["progress_bar"] }
